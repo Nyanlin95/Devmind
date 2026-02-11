@@ -136,13 +136,6 @@ See [OpenClaw Integration Skill](integrations/openclaw/SKILL.md) for agent instr
 └── index.json
 ```
 
-## Roadmap
-
-- [x] Phase 1: Foundation (project setup)
-- [x] Phase 2: Unified CLI + Memory Extension
-- [x] Phase 3: Cross-context analysis & Context Slicing
-- [x] Phase 4: Distribution & OpenClaw integration
-
 ## License
 
 Apache 2.0 © Nyan Lin Maung
