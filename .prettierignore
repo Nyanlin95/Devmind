@@ -1,0 +1,8 @@
+node_modules
+dist
+coverage
+.devmind
+.npm-cache
+.pnpm-store
+test_output.txt
+test_output_2.txt

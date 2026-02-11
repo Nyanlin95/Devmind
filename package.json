@@ -1,0 +1,78 @@
+{
+  "name": "devmind",
+  "version": "1.0.0",
+  "description": "AI Memory Layer for development - Complete project context (codebase + database + memory)",
+  "type": "module",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "bin": {
+    "devmind": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepack": "npm run build",
+    "pack:dry": "npm pack --dry-run",
+    "dev": "ts-node --esm src/cli.ts",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.config.cjs --runInBand",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "tsc --noEmit",
+    "clean": "node -e \"const fs=require('fs');['dist','coverage'].forEach(d=>{try{fs.rmSync(d,{recursive:true,force:true})}catch{}})\"",
+    "release:check": "npm run clean && npm run build && npm test && npm run pack:dry"
+  },
+  "keywords": [
+    "database",
+    "schema",
+    "codebase",
+    "ai",
+    "claude",
+    "cursor",
+    "windsurf",
+    "antigravity",
+    "context",
+    "documentation",
+    "memory",
+    "devtools"
+  ],
+  "author": "Nyan Lin Maung <nyanlinmaung.d@gmail.com>",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Nyanlin95/devmind"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "pnpm": ">=8.0.0"
+  },
+  "dependencies": {
+    "chalk": "^5.3.0",
+    "commander": "^12.0.0",
+    "firebase-admin": "^12.0.0",
+    "glob": "^10.3.10",
+    "inquirer": "^9.2.0",
+    "js-yaml": "^4.1.0",
+    "mongodb": "^6.0.0",
+    "mysql2": "^3.16.3",
+    "pg": "^8.11.0",
+    "sqlite3": "^5.1.7"
+  },
+  "devDependencies": {
+    "@jest/globals": "^30.2.0",
+    "@types/glob": "^8.1.0",
+    "@types/inquirer": "^9.0.9",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^20.11.0",
+    "@types/pg": "^8.11.0",
+    "jest": "^29.7.0",
+    "prettier": "^3.8.1",
+    "ts-jest": "^29.4.6",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.0"
+  }
+}

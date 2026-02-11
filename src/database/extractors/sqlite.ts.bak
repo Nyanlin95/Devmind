@@ -1,0 +1,269 @@
+/**
+ * SQLite Schema Extractor
+ * Extracts database schema information from SQLite databases
+ */
+
+import sqlite3, { Database } from 'sqlite3';
+
+export interface SQLiteColumnInfo {
+  name: string;
+  type: string;
+  nullable: boolean;
+  default: string | null;
+  primaryKey: boolean;
+}
+
+export interface SQLiteIndexInfo {
+  name: string;
+  table: string;
+  columns: string[];
+  unique: boolean;
+  isPrimaryKey: boolean;
+  isAutoIncrement: boolean;
+}
+
+export interface SQLiteForeignKeyInfo {
+  id: number;
+  seq: number;
+  table: string;
+  from: string;
+  to: string;
+  onUpdate: string;
+  onDelete: string;
+  match: string;
+}
+
+export interface SQLiteTableInfo {
+  name: string;
+  columns: SQLiteColumnInfo[];
+  indexes: SQLiteIndexInfo[];
+  foreignKeys: SQLiteForeignKeyInfo[];
+  primaryKey: string[];
+  withoutRowId: boolean;
+}
+
+export interface SQLiteSchemaInfo {
+  tables: SQLiteTableInfo[];
+  databaseType: 'sqlite';
+  databasePath: string;
+}
+
+export class SQLiteExtractor {
+  private dbPath: string;
+
+  constructor(dbPath: string) {
+    this.dbPath = dbPath;
+  }
+
+  async extract(): Promise<SQLiteSchemaInfo> {
+    return new Promise((resolve, reject) => {
+      const db = new sqlite3.Database(this.dbPath, (err) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+      });
+
+      db.serialize(async () => {
+        try {
+          const tables = await this.extractTables(db);
+          const tablesWithDetails = await Promise.all(
+            tables.map((table) => this.enrichTable(db, table))
+          );
+
+          db.close();
+          resolve({
+            tables: tablesWithDetails,
+            databaseType: 'sqlite' as const,
+            databasePath: this.dbPath,
+          });
+        } catch (error) {
+          db.close();
+          reject(error);
+        }
+      });
+    });
+  }
+
+  private extractTables(db: Database): Promise<SQLiteTableInfo[]> {
+    return new Promise((resolve, reject) => {
+      db.all(`
+        SELECT 
+          name,
+          sql
+        FROM sqlite_master 
+        WHERE type = 'table' 
+          AND name NOT LIKE 'sqlite_%'
+        ORDER BY name
+      `, (err, rows: Array<{ name: string; sql: string | null }>) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+
+        const tables: SQLiteTableInfo[] = rows.map((row) => {
+          const sql = row.sql || '';
+          const withoutRowId = sql.toUpperCase().includes('WITHOUT ROWID');
+          
+          return {
+            name: row.name,
+            columns: [],
+            indexes: [],
+            foreignKeys: [],
+            primaryKey: [],
+            withoutRowId,
+          };
+        });
+
+        resolve(tables);
+      });
+    });
+  }
+
+  private enrichTable(db: Database, table: SQLiteTableInfo): Promise<SQLiteTableInfo> {
+    return new Promise((resolve, reject) => {
+      const tableName = table.name;
+      
+      db.all(`
+        PRAGMA table_info("${tableName}")
+      `, (err, rows: Array<{
+        cid: number;
+        name: string;
+        type: string;
+        notnull: number;
+        dflt_value: string | null;
+        pk: number;
+      }>) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+
+        const columns: SQLiteColumnInfo[] = rows.map((row) => ({
+          name: row.name,
+          type: row.type || 'TEXT',
+          nullable: row.notnull === 0,
+          default: row.dflt_value,
+          primaryKey: row.pk === 1,
+        }));
+
+        const primaryKey = columns
+          .filter((c) => c.primaryKey)
+          .map((c) => c.name);
+
+        // Get indexes
+        db.all(`
+          PRAGMA index_list("${tableName}")
+        `, (err, indexRows: Array<{
+          seq: number;
+          name: string;
+          unique: number;
+          origin: string;
+          partial: number;
+        }>) => {
+          if (err) {
+            reject(err);
+            return;
+          }
+
+          const indexesPromises = indexRows
+            .filter((idx) => idx.name !== 'sqlite_autoindex_' + tableName) // Skip auto indexes
+            .map((index) => {
+              return new Promise<SQLiteIndexInfo>((resolveIdx, rejectIdx) => {
+                db.all(`
+                  PRAGMA index_info("${index.name}")
+                `, (err, colRows: Array<{
+                  seqno: number;
+                  cid: number;
+                  name: string;
+                }) => {
+                  if (err) {
+                    rejectIdx(err);
+                    return;
+                  }
+
+                  const columnsList = colRows.map((r) => r.name);
+                  const isAutoIncrement = index.origin === 'u' && 
+                    columnsList.length === 1 && 
+                    columnsList[0] === 'id';
+
+                  resolveIdx({
+                    name: index.name,
+                    table: tableName,
+                    columns: columnsList,
+                    unique: index.unique === 1,
+                    isPrimaryKey: index.origin === 'pk',
+                    isAutoIncrement,
+                  });
+                });
+              });
+            });
+
+          Promise.all(indexesPromises).then((indexes) => {
+            // Get foreign keys
+            db.all(`
+              PRAGMA foreign_key_list("${tableName}")
+            `, (err, fkRows: Array<{
+              id: number;
+              seq: number;
+              table: string;
+              from: string;
+              to: string;
+              on_update: string;
+              on_delete: string;
+              match: string;
+            }>) => {
+              if (err) {
+                reject(err);
+                return;
+              }
+
+              const foreignKeys: SQLiteForeignKeyInfo[] = fkRows.map((row) => ({
+                id: row.id,
+                seq: row.seq,
+                table: row.table,
+                from: row.from,
+                to: row.to,
+                onUpdate: row.on_update,
+                onDelete: row.on_delete,
+                match: row.match,
+              }));
+
+              resolve({
+                ...table,
+                columns,
+                indexes,
+                foreignKeys,
+                primaryKey,
+              });
+            };
+          }).catch(reject);
+        });
+      });
+    });
+  }
+
+  async close(): Promise<void> {
+    // SQLite doesn't require explicit closing for file-based databases
+  }
+}
+
+// SQLite-specific type mappings
+export const SQLITE_TYPE_MAPPINGS = [
+  { dbType: 'INTEGER', tsType: 'number', note: '64-bit signed integer' },
+  { dbType: 'INT', tsType: 'number' },
+  { dbType: 'BIGINT', tsType: 'number' },
+  { dbType: 'REAL', tsType: 'number', note: '64-bit floating point' },
+  { dbType: 'FLOAT', tsType: 'number' },
+  { dbType: 'DOUBLE', tsType: 'number' },
+  { dbType: 'TEXT', tsType: 'string' },
+  { dbType: 'VARCHAR', tsType: 'string' },
+  { dbType: 'CLOB', tsType: 'string' },
+  { dbType: 'BLOB', tsType: 'Buffer' },
+  { dbType: 'NULL', tsType: 'null' },
+  { dbType: 'BOOLEAN', tsType: 'boolean' },
+  { dbType: 'NUMERIC', tsType: 'number' },
+  { dbType: 'DATE', tsType: 'Date' },
+  { dbType: 'DATETIME', tsType: 'Date' },
+  { dbType: 'JSON', tsType: 'Record<string, unknown>' },
+];

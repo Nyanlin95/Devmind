@@ -1,0 +1,28 @@
+# Source and tests
+src/
+tests/
+
+# Build/system artifacts
+coverage/
+dist/packages/
+*.tsbuildinfo
+
+# Local/temp
+.devmind/
+.ai/
+.npm-cache/
+tmp-install-check/
+.tmp-*/
+*.tmp
+
+# Logs and reports
+*.log
+test_output*.txt
+
+# Internal/project docs not needed in package
+SKILL.md
+CONTRIBUTING.md
+cohere-integration-plan.md
+docs/
+integrations/
+

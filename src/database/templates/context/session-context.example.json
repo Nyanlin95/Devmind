@@ -1,0 +1,48 @@
+{
+  "version": "1.0.2",
+  "session": {
+    "id": "sess_abc123",
+    "agentId": "agent-primary",
+    "parentSessionId": null,
+    "timestamp": "2026-02-08T10:30:00Z",
+    "status": "in_progress"
+  },
+  "state": {
+    "phase": "schema_analysis",
+    "progress": 65,
+    "lastAction": "Analyzed orders table relationships",
+    "nextAction": "Generate migration for new columns",
+    "checkpointTimestamp": "2026-02-08T10:25:00Z"
+  },
+  "variables": {
+    "targetTable": "orders",
+    "organizationId": "org_xyz789",
+    "batchSize": 1000,
+    "dryRun": false
+  },
+  "schema": {
+    "databaseType": "postgresql",
+    "tablesModified": ["orders", "order_items"],
+    "schemaHash": "a1b2c3d4e5f6"
+  },
+  "decisions": [
+    {
+      "id": "DECISION_001",
+      "title": "Use UUID for order IDs",
+      "choice": "UUID v4 with CUID"
+    },
+    {
+      "id": "DECISION_002",
+      "title": "Soft delete strategy",
+      "choice": "deleted_at timestamp"
+    }
+  ],
+  "handoffs": [],
+  "errors": [
+    {
+      "timestamp": "2026-02-08T10:15:00Z",
+      "message": "Connection timeout - retrying",
+      "recovered": true
+    }
+  ]
+}

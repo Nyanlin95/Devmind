@@ -1,0 +1,48 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Build outputs
+dist/
+**/dist/
+*.tsbuildinfo
+
+# Test coverage
+coverage/
+**/coverage/
+
+# Logs
+*.log
+npm-debug.log*
+error*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Env files
+.env
+.env.local
+.env.*.local
+
+# Temp
+.ai/
+.devmind/
+*.tmp
+.npm-cache/
+.tmp-cli-smoke/
+.tmp-install-check/
+.tmp-*/
+tmp-install-check/
+*.tgz
+test_output*.txt
+
+# Scripts
+copy-cohere-db.ps1

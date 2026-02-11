@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cohere.ai/schemas/session-context.json",
+  "title": "Session Context",
+  "description": "Machine-readable agent session context for multi-agent handoff",
+
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Schema version for compatibility"
+    },
+    "session": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique session identifier"
+        },
+        "agentId": {
+          "type": "string",
+          "description": "Agent that performed the work"
+        },
+        "parentSessionId": {
+          "type": "string",
+          "description": "Parent session if spawned subagent"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 timestamp"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["in_progress", "completed", "failed", "paused"],
+          "description": "Session status"
+        }
+      },
+      "required": ["id", "agentId", "timestamp", "status"]
+    },
+    "state": {
+      "type": "object",
+      "properties": {
+        "phase": {
+          "type": "string",
+          "description": "Current phase of work"
+        },
+        "progress": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Progress percentage"
+        },
+        "lastAction": {
+          "type": "string",
+          "description": "Last action performed"
+        },
+        "nextAction": {
+          "type": "string",
+          "description": "Next action to perform"
+        },
+        "checkpointTimestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last checkpoint time"
+        }
+      }
+    },
+    "variables": {
+      "type": "object",
+      "description": "Key variables for state reconstruction"
+    },
+    "schema": {
+      "type": "object",
+      "properties": {
+        "databaseType": {
+          "type": "string",
+          "enum": ["postgresql", "mysql", "sqlite", "prisma", "drizzle"]
+        },
+        "tablesModified": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Tables modified in this session"
+        },
+        "schemaHash": {
+          "type": "string",
+          "description": "Hash of schema for change detection"
+        }
+      }
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "choice": { "type": "string" }
+        }
+      },
+      "description": "Decision IDs made in this session"
+    },
+    "handoffs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "fromSession": { "type": "string" },
+          "toSession": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      },
+      "description": "Handoff history"
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "timestamp": { "type": "string", "format": "date-time" },
+          "message": { "type": "string" },
+          "recovered": { "type": "boolean" }
+        }
+      },
+      "description": "Errors encountered in session"
+    }
+  },
+  "required": ["version", "session", "state", "variables", "schema"]
+}
