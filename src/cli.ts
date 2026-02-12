@@ -34,7 +34,7 @@ const program = new Command();
 program
   .name('devmind')
   .description('Unified developer assistant for database and codebase context')
-  .version('1.0.1');
+  .version('1.0.2');
 
 // Database Commands
 program
@@ -146,7 +146,20 @@ program
       if (runAll) {
         logger.success('Unified Generation Complete!');
         logger.info(`Context available in ${mergedOptions.output || '.devmind'}`);
+        logger.info('Session startup context:');
+        logger.info(`   1. Read ${(mergedOptions.output || '.devmind') + '/AGENTS.md'}`);
+        logger.info(`   2. Read ${(mergedOptions.output || '.devmind') + '/index.json'}`);
+        logger.info('Tip: run `devmind status` to verify freshness.');
       }
+
+      const { runAutosave } = await import('./commands/autosave.js');
+      await runAutosave({
+        output: mergedOptions.output || '.devmind',
+        path: mergedOptions.path || '.',
+        source: 'generate',
+        note: runAll ? 'Completed unified generation' : 'Completed generation',
+        silent: true,
+      });
     } catch (error) {
       logger.error('Generation failed', error as Error);
       process.exit(1);
@@ -200,7 +213,19 @@ program
   .option('--category <category>', 'Learning category')
   .option('-o, --output <dir>', 'Output directory', '.devmind')
   .option('--json', 'Output as JSON')
-  .action(learn);
+  .action(async (learning, options) => {
+    await learn(learning, options);
+    if (!options.list && learning) {
+      const { runAutosave } = await import('./commands/autosave.js');
+      await runAutosave({
+        output: options.output || '.devmind',
+        path: '.',
+        source: 'learn',
+        note: `Added learning (${options.category || 'general'})`,
+        silent: true,
+      });
+    }
+  });
 
 program
   .command('history')
@@ -222,6 +247,70 @@ program
   .action(async (options) => {
     const { analyze } = await import('./commands/analyze.js');
     await analyze(options);
+    const { runAutosave } = await import('./commands/autosave.js');
+    await runAutosave({
+      output: options.output || '.devmind',
+      path: options.path || '.',
+      source: 'analyze',
+      note: 'Completed code-to-database analysis',
+      silent: true,
+    });
+  });
+
+program
+  .command('status')
+  .description('Show context status, freshness, and recommended next command')
+  .option('-o, --output <dir>', 'Output directory', '.devmind')
+  .option('-p, --path <path>', 'Codebase path', '.')
+  .option('--json', 'Output as JSON')
+  .action(async (options) => {
+    const { status } = await import('./commands/status.js');
+    await status(options);
+  });
+
+program
+  .command('audit')
+  .description('Audit codebase coverage against recorded learnings')
+  .option('-o, --output <dir>', 'Output directory', '.devmind')
+  .option('-p, --path <path>', 'Codebase path', '.')
+  .option('--json', 'Output as JSON')
+  .action(async (options) => {
+    const { audit } = await import('./commands/audit.js');
+    await audit(options);
+    const { runAutosave } = await import('./commands/autosave.js');
+    await runAutosave({
+      output: options.output || '.devmind',
+      path: options.path || '.',
+      source: 'audit',
+      note: 'Completed learning audit',
+      silent: true,
+    });
+  });
+
+program
+  .command('extract')
+  .description('Extract learning candidates from code and analysis artifacts')
+  .option('-o, --output <dir>', 'Output directory', '.devmind')
+  .option('-p, --path <path>', 'Codebase path', '.')
+  .option('--apply', 'Append extracted learnings to memory/LEARN.md')
+  .option('--json', 'Output as JSON')
+  .action(async (options) => {
+    const { extract } = await import('./commands/extract.js');
+    await extract(options);
+  });
+
+program
+  .command('autosave')
+  .description('Persist session journal/context and auto-apply extracted learnings')
+  .option('-o, --output <dir>', 'Output directory', '.devmind')
+  .option('-p, --path <path>', 'Codebase path', '.')
+  .option('--source <source>', 'Autosave source label', 'manual')
+  .option('--note <note>', 'Autosave note')
+  .option('--no-extract', 'Skip extraction/apply step')
+  .option('--json', 'Output as JSON')
+  .action(async (options) => {
+    const { autosave } = await import('./commands/autosave.js');
+    await autosave(options);
   });
 
 // Codebase Commands
@@ -265,6 +354,19 @@ program
       await generateUnifiedDocs(outputDir);
 
       logger.success('Scan complete!');
+      logger.info('Session startup context:');
+      logger.info(`   1. Read ${outputDir}/AGENTS.md`);
+      logger.info(`   2. Read ${outputDir}/index.json`);
+      logger.info('Tip: run `devmind status` to verify freshness.');
+
+      const { runAutosave } = await import('./commands/autosave.js');
+      await runAutosave({
+        output: outputDir,
+        path: options.path || '.',
+        source: 'scan',
+        note: 'Completed codebase scan',
+        silent: true,
+      });
     } catch (error) {
       logger.error('Failed to scan codebase', error as Error);
       process.exit(1);

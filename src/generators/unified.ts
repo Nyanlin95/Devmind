@@ -99,6 +99,18 @@ ${learnings || '(No learnings recorded)'}
   <tool name="devmind-analyze">
     <description>Analyze code-to-database usage patterns.</description>
   </tool>
+  <tool name="devmind-status">
+    <description>Check context freshness and get the recommended next command.</description>
+  </tool>
+  <tool name="devmind-audit">
+    <description>Audit codebase coverage against recorded learnings.</description>
+  </tool>
+  <tool name="devmind-extract">
+    <description>Extract learning candidates from code and analysis artifacts.</description>
+  </tool>
+  <tool name="devmind-autosave">
+    <description>Persist session journal/context and auto-apply extracted learnings.</description>
+  </tool>
   <tool name="devmind-learn">
     <description>Save a new technical learning, pattern, or architectural decision to LEARN.md.</description>
     <arguments>
@@ -116,14 +128,19 @@ ${learnings || '(No learnings recorded)'}
 
 ## Instructions
 
-### Cursor / Windsurf
-- **Context:** Read this file and linked overviews.
-- **Style:** Follow patterns in architecture.md.
-- **Database:** Check schema-overview.md before writing SQL.
+### Agent Runbook (Auto Workflow, Recommendation Drift Control)
+1. Automatically run \`devmind status --json\` at session start.
+2. If context is stale/missing, automatically run the returned \`recommendedCommand\` (drift control remains recommendation-based).
+3. Automatically re-run \`devmind status --json\` and continue when context is fresh.
+4. Perform the requested coding task.
+5. Automatically run \`devmind autosave --source task-end\` at task end (journal + session context + learnings apply).
+6. Optionally run \`devmind extract --json\` for a verbose extraction report.
 
-### Claude
-- **Validation:** Run \`devmind validate\` before major changes.
-- **Memory:** Check \`LEARN.md\` for past lessons.
+### Working Rules
+- **Context:** Read this file first, then linked files from \`index.json\`.
+- **Style:** Follow patterns in \`architecture.md\` and module docs.
+- **Database:** Run \`devmind analyze\` or \`devmind validate\` before risky schema changes.
+- **Memory:** Use \`LEARN.md\` to keep decisions consistent across sessions.
 `.trim();
 
   await writeFileSafe(path.join(outputDir, 'AGENTS.md'), agentsContent);
@@ -131,7 +148,7 @@ ${learnings || '(No learnings recorded)'}
   // Generate unified index.json
   const index = {
     timestamp: new Date().toISOString(),
-    version: '1.0.1',
+    version: '1.0.2',
     contexts: {
       agents: 'AGENTS.md',
       schema: 'database/schema-overview.md',

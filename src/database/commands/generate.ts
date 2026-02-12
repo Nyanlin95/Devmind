@@ -18,6 +18,7 @@ import { jsonSuccess, jsonError, outputJson, isJsonMode } from '../utils/json-ou
 import * as fs from 'fs'; // Keep fs for existsSync checks
 import { fileURLToPath } from 'url';
 import { ensureWorkspaceAgentsBootstrap } from '../../generators/unified.js';
+import { runAutosave } from '../../commands/autosave.js';
 
 interface GenerateOptions {
   url?: string;
@@ -295,7 +296,17 @@ export async function generate(options: GenerateOptions): Promise<void> {
     logger.info('Next steps:');
     logger.info('   1. Review detected patterns in context/BUSINESS_LOGIC.md');
     logger.info('   2. Your AI now has persistent memory across sessions');
-    logger.info('   3. Commit to version control');
+    logger.info('   3. Read AGENTS.md and index.json at session start');
+    logger.info('   4. Run `devmind status` to verify context freshness');
+    logger.info('   5. Commit to version control');
+
+    await runAutosave({
+      output: outputDir,
+      path: '.',
+      source: 'database-generate',
+      note: 'Completed database context generation',
+      silent: true,
+    });
   } catch (error) {
     if (isJsonMode(options)) {
       outputJson(jsonError(error as Error));

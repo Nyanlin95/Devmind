@@ -52,6 +52,21 @@ devmind context --focus packages/database
 - Before modifying database schema (check for usage).
 - When deprecating tables (check for orphans).
 
+### 3.5 Context Health Check
+
+**Tool:** `devmind status`
+**Purpose:** Reports context freshness and returns a recommended command for refresh.
+**Usage:**
+
+```bash
+devmind status --json
+```
+
+**When to use:**
+
+- At session start (always).
+- Before major code/database modifications.
+
 ### 4. Persistent Memory
 
 **Tool:** `devmind learn`
@@ -67,6 +82,28 @@ devmind learn "Always use UUIDs for primary keys" --category database
 - When you make a significant design decision.
 - When you identify a pattern that should be followed.
 
+### 4.5 Learning Audit and Extraction
+
+**Tools:** `devmind audit`, `devmind extract`
+**Purpose:** Measures learning coverage in code and extracts new learning candidates.
+**Usage:**
+
+```bash
+devmind audit
+devmind extract --json
+devmind extract --apply
+```
+
+### 4.6 Autosave
+
+**Tool:** `devmind autosave`
+**Purpose:** Persists crash-safe session journal/context and auto-applies extracted learnings.
+**Usage:**
+
+```bash
+devmind autosave --source task-end
+```
+
 ### 5. History Tracking
 
 **Tool:** `devmind history`
@@ -77,4 +114,6 @@ devmind learn "Always use UUIDs for primary keys" --category database
 - Always run `devmind scan` after pulling latest changes.
 - Check `AGENTS.md` (generated file) for the latest project context.
 - Keep the workspace `AGENTS.md` bootstrap block committed so sessions auto-load DevMind context.
-- Use `devmind learn` freely to build a knowledge base for future agents.
+- Run `devmind status --json` at session start and follow `recommendedCommand` when stale.
+- Use `devmind autosave --source task-end` at task end to minimize context loss.
+- Use `devmind learn` and `devmind extract --apply` to build a durable knowledge base.

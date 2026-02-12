@@ -18,7 +18,11 @@ A single workflow generates everything your AI needs to understand your project 
 ## Features
 
 - **Unified Context Generation** - Single command for complete project understanding
+- **Context Health Check** - `devmind status` reports freshness and recommends next action
 - **Context Slicing** - "Zoom in" on specific modules (`devmind context`)
+- **Learning Audit** - `devmind audit` checks code coverage against recorded learnings
+- **Learning Extraction** - `devmind extract` discovers reusable patterns from code and reports
+- **Crash-Safe Autosave** - `devmind autosave` journals session state and applies learnings
 - **Multi-Database Support** - PostgreSQL, MySQL, SQLite, MongoDB, Firebase
 - **Memory System** - Checkpoints, `LEARN.md`, session history
 - **Evolution Tracking** - Track both schema and codebase changes over time
@@ -97,6 +101,53 @@ devmind history --unified
 devmind analyze -p ./my-project
 ```
 
+### Context Health and Drift Recommendations
+
+```bash
+# Show context freshness + recommended next command
+devmind status
+
+# Machine-readable preflight
+devmind status --json
+```
+
+### Learning Quality Loop
+
+```bash
+# Audit codebase coverage against LEARN.md
+devmind audit
+
+# Extract learning candidates to report
+devmind extract
+
+# Extract and append learnings to memory/LEARN.md
+devmind extract --apply
+```
+
+### Crash-Safe Session Persistence
+
+```bash
+# Persist session journal + context + extracted learnings
+devmind autosave --source task-end
+
+# Persist without extraction/apply
+devmind autosave --no-extract
+```
+
+### Agent-First Session Flow
+
+```bash
+# 1) Preflight
+devmind status --json
+
+# 2) If stale/missing, run recommendedCommand from status output
+# 3) Re-check
+devmind status --json
+
+# 4) Do task, then autosave
+devmind autosave --source task-end
+```
+
 ## Integration
 
 ### OpenClaw
@@ -125,6 +176,7 @@ See [OpenClaw Integration Skill](integrations/openclaw/SKILL.md) for agent instr
 ├── memory/
 │   ├── checkpoints/
 │   ├── LEARN.md               # Persistent accumulated knowledge
+│   ├── SESSION_JOURNAL.md     # Incremental crash-safe journal
 │   ├── schema-evolution.md
 │   ├── codebase-evolution.md
 │   └── session-history.md

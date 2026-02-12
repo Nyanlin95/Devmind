@@ -49,6 +49,24 @@ DevMind is a single package with a unified codebase in `src/`:
 
 We use a standard TypeScript development workflow.
 
+### Useful CLI Commands During Development
+
+```bash
+# Generate full project context
+npm run dev -- generate --all
+
+# Check context freshness and recommendation
+npm run dev -- status --json
+
+# Analyze DB usage and learning coverage
+npm run dev -- analyze
+npm run dev -- audit
+
+# Extract/apply learnings and persist session state
+npm run dev -- extract --apply
+npm run dev -- autosave --source dev-loop
+```
+
 ### Running in Dev Mode
 
 To run the CLI directly from source:

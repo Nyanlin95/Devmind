@@ -35,12 +35,34 @@ For tools like Cursor or Windsurf:
 
 For autonomous agents:
 
-1. **Initialize:** Read `.devmind/AGENTS.md`.
-2. **Plan:** Use `.devmind/codebase/architecture.md` to locate relevant modules.
-3. **Deep Dive:** Read specific module files in `.devmind/codebase/modules/`.
-4. **Action:** Perform coding task.
-5. **Verify:** Use `devmind analyze` to ensure new code matches database schema.
+1. **Initialize:** Read `.devmind/AGENTS.md`, then `.devmind/index.json`.
+2. **Preflight (automatic):** Run `devmind status --json`.
+3. **Refresh (automatic, recommendation-based drift control):** If context is stale/missing, run the returned `recommendedCommand`.
+4. **Re-check (automatic):** Run `devmind status --json` again, then continue.
+5. **Action:** Perform coding task.
+6. **Post-task memory loop (automatic):** Run `devmind autosave --source task-end` (journal + session context + learning apply).
+7. **Optional report:** Run `devmind extract --json` if you need the extraction report details.
+8. **Verify risky DB changes:** Use `devmind analyze` or `devmind validate`.
 
 ## Helper Tools
 
 DevMind provides a `devmind-tools.json` (MCP-compatible) definition file that agents can use to call DevMind CLI commands directly if equipped with tool-use capabilities.
+
+## Command Reference (Agent-Facing)
+
+- `devmind status --json`
+: Preflight context health and read `recommendedCommand` when stale.
+- `devmind generate --all`
+: Refresh database + codebase context in one step.
+- `devmind scan`
+: Refresh codebase context only.
+- `devmind analyze`
+: Map code usage to database tables.
+- `devmind audit`
+: Check coverage of `LEARN.md` patterns across source files.
+- `devmind extract --json`
+: Produce extracted learning candidates report.
+- `devmind extract --apply`
+: Append extracted learning candidates into `memory/LEARN.md`.
+- `devmind autosave --source task-end`
+: Persist session journal/context and auto-apply extracted learnings.
