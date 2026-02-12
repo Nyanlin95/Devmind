@@ -34,6 +34,15 @@ devmind context --focus packages/database
 - To find exports/definitions in a specific module.
 - To reduce token usage (Token Efficiency).
 
+### 2.5 Auto Context Injection (New)
+
+**Behavior:** Running `devmind generate`, `devmind generate --all`, or `devmind scan` updates the workspace `AGENTS.md` bootstrap block.
+**Purpose:** Ensures every new agent session in this directory is instructed to load the generated DevMind context first.
+**Loaded files at session start:**
+
+- `.devmind/AGENTS.md` (or configured output directory equivalent)
+- `.devmind/index.json` when available
+
 ### 3. Cross-Context Analysis
 
 **Tool:** `devmind analyze`
@@ -67,4 +76,5 @@ devmind learn "Always use UUIDs for primary keys" --category database
 
 - Always run `devmind scan` after pulling latest changes.
 - Check `AGENTS.md` (generated file) for the latest project context.
+- Keep the workspace `AGENTS.md` bootstrap block committed so sessions auto-load DevMind context.
 - Use `devmind learn` freely to build a knowledge base for future agents.

@@ -41,6 +41,9 @@ describe('TypeScript Parser', () => {
         export type ID = string | number;
 
         export const MAX_RETRIES = 3;
+
+        function internalOnly(): void {}
+        class Hidden {}
         `;
 
     await fs.promises.writeFile(testFile, content);
@@ -90,5 +93,13 @@ describe('TypeScript Parser', () => {
     const exports = parseFile(testFile);
     const v = exports.find((e) => e.type === 'variable' && e.name === 'MAX_RETRIES');
     expect(v).toBeDefined();
+  });
+
+  it('should not include non-exported top-level declarations', () => {
+    const exports = parseFile(testFile);
+    const names = exports.map((e) => e.name);
+
+    expect(names).not.toContain('internalOnly');
+    expect(names).not.toContain('Hidden');
   });
 });

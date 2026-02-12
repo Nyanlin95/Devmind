@@ -272,7 +272,7 @@ ${schema.tables.map((t) => `- ${t.name} (${t.columns.length} columns)`).join('\n
       sessionId: `session-${Date.now()}`,
       timestamp: new Date().toISOString(),
       schemaHash: this.calculateSchemaHash(schema),
-      schemaVersion: '1.0.0',
+      schemaVersion: '1.0.1',
       recentChanges: [],
       pendingQueries: [],
       discoveries: [

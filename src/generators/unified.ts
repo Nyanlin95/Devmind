@@ -1,6 +1,51 @@
 import * as path from 'path';
 import { readFileSafe, writeFileSafe, ensureDir, logger } from '../core/index.js';
 
+const START_MARKER = '<!-- devmind:auto-context:start -->';
+const END_MARKER = '<!-- devmind:auto-context:end -->';
+
+function toPosixPath(filePath: string): string {
+  return filePath.replace(/\\/g, '/');
+}
+
+function buildAutoContextBlock(outputDir: string): string {
+  const workspaceRoot = process.cwd();
+  const agentsPath = toPosixPath(path.relative(workspaceRoot, path.join(outputDir, 'AGENTS.md')));
+  const indexPath = toPosixPath(path.relative(workspaceRoot, path.join(outputDir, 'index.json')));
+
+  return [
+    START_MARKER,
+    '## DevMind Auto Context',
+    `- At session start, read \`${agentsPath}\` for project context.`,
+    `- Then read \`${indexPath}\` to discover linked context files.`,
+    '- If either file is missing or stale, run `devmind generate --all` or `devmind scan` first.',
+    END_MARKER,
+  ].join('\n');
+}
+
+export async function ensureWorkspaceAgentsBootstrap(outputDir: string): Promise<void> {
+  const workspaceAgentsPath = path.join(process.cwd(), 'AGENTS.md');
+  const block = buildAutoContextBlock(outputDir);
+
+  const existing = await readFileSafe(workspaceAgentsPath).catch(() => '');
+  const markerPattern = new RegExp(`${START_MARKER}[\\s\\S]*?${END_MARKER}`, 'm');
+
+  let nextContent: string;
+  if (existing) {
+    if (markerPattern.test(existing)) {
+      nextContent = existing.replace(markerPattern, block);
+    } else {
+      const separator = existing.endsWith('\n') ? '\n' : '\n\n';
+      nextContent = `${existing}${separator}${block}\n`;
+    }
+  } else {
+    nextContent = `${block}\n`;
+  }
+
+  await writeFileSafe(workspaceAgentsPath, nextContent);
+  logger.info(`Updated workspace AGENTS bootstrap: ${workspaceAgentsPath}`);
+}
+
 export async function generateUnifiedDocs(outputDir: string): Promise<void> {
   logger.info('Generating unified documentation...');
 
@@ -86,7 +131,7 @@ ${learnings || '(No learnings recorded)'}
   // Generate unified index.json
   const index = {
     timestamp: new Date().toISOString(),
-    version: '1.0.0',
+    version: '1.0.1',
     contexts: {
       agents: 'AGENTS.md',
       schema: 'database/schema-overview.md',
@@ -194,4 +239,6 @@ ${learnings || '(No learnings recorded)'}
   logger.info(`   - ${path.join(outputDir, 'devmind-tools.json')}`);
 
   logger.info(`   - ${path.join(outputDir, 'index.json')}`);
+
+  await ensureWorkspaceAgentsBootstrap(outputDir);
 }

@@ -34,7 +34,7 @@ const program = new Command();
 program
   .name('devmind')
   .description('Unified developer assistant for database and codebase context')
-  .version('1.0.0');
+  .version('1.0.1');
 
 // Database Commands
 program

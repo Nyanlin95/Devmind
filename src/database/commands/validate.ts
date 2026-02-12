@@ -23,6 +23,16 @@ interface ValidationResult {
   warnings: string[];
 }
 
+async function extractDocumentedTablesFromFile(filePath: string): Promise<Set<string>> {
+  const tables = new Set<string>();
+  const content = await readFileSafe(filePath);
+  const tableMatches = content.matchAll(/###\s+([a-zA-Z_][a-zA-Z0-9_]*)/g);
+  for (const match of tableMatches) {
+    tables.add(match[1]);
+  }
+  return tables;
+}
+
 export async function validate(options: ValidateOptions): Promise<void> {
   logger.info('Validating database context...');
   if (options.strict) {
@@ -150,12 +160,13 @@ export async function validate(options: ValidateOptions): Promise<void> {
     const generatedTables = new Set<string>();
 
     if (fs.existsSync(claudeFile)) {
-      const content = await readFileSafe(claudeFile);
-      // Extract table names from markdown (looking for ### TableName pattern)
-      const tableMatches = content.matchAll(/###\s+([a-zA-Z_][a-zA-Z0-9_]*)/g);
-      for (const match of tableMatches) {
-        generatedTables.add(match[1]);
-      }
+      const claudeTables = await extractDocumentedTablesFromFile(claudeFile);
+      claudeTables.forEach((table) => generatedTables.add(table));
+    }
+
+    if (fs.existsSync(agentsFile)) {
+      const agentsTables = await extractDocumentedTablesFromFile(agentsFile);
+      agentsTables.forEach((table) => generatedTables.add(table));
     }
 
     logger.info(`   Tables documented: ${generatedTables.size}`);

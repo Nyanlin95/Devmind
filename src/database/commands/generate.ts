@@ -17,6 +17,7 @@ import { MemoryInfrastructure } from './memory.js';
 import { jsonSuccess, jsonError, outputJson, isJsonMode } from '../utils/json-output.js';
 import * as fs from 'fs'; // Keep fs for existsSync checks
 import { fileURLToPath } from 'url';
+import { ensureWorkspaceAgentsBootstrap } from '../../generators/unified.js';
 
 interface GenerateOptions {
   url?: string;
@@ -203,6 +204,7 @@ export async function generate(options: GenerateOptions): Promise<void> {
     const templatesDir = resolveTemplatesDir();
     const generator = new TemplateGenerator(templatesDir, outputDir);
     await generator.save(outputDir, unifiedSchema);
+    await ensureWorkspaceAgentsBootstrap(outputDir);
 
     // Save raw schema JSON for analysis
     await writeFileSafe(

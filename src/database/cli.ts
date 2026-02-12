@@ -24,7 +24,7 @@ import { learn } from './commands/learn.js';
 import { history } from './commands/history.js';
 import * as fs from 'fs';
 
-const pkg = JSON.parse(fs.readFileSync(join(__dirname, '..', 'package.json'), 'utf-8'));
+const pkg = JSON.parse(fs.readFileSync(join(__dirname, '..', '..', 'package.json'), 'utf-8'));
 const version = pkg.version;
 
 const program = new Command();

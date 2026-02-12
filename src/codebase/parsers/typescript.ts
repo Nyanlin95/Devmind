@@ -42,10 +42,16 @@ export function parseFile(filePath: string): CodeExport[] {
  * Check if a node is exported
  */
 function isExported(node: ts.Node): boolean {
-  return (
-    (ts.getCombinedModifierFlags(node as ts.Declaration) & ts.ModifierFlags.Export) !== 0 ||
-    (!!node.parent && node.parent.kind === ts.SyntaxKind.SourceFile)
-  );
+  const explicitExport =
+    (ts.getCombinedModifierFlags(node as ts.Declaration) & ts.ModifierFlags.Export) !== 0;
+  const defaultExport =
+    ts.isExportAssignment(node) ||
+    (ts.isFunctionDeclaration(node) &&
+      !!node.modifiers?.some((m) => m.kind === ts.SyntaxKind.DefaultKeyword)) ||
+    (ts.isClassDeclaration(node) &&
+      !!node.modifiers?.some((m) => m.kind === ts.SyntaxKind.DefaultKeyword));
+
+  return explicitExport || defaultExport;
 }
 
 /**
