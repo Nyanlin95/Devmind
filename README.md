@@ -1,193 +1,157 @@
-# DevMind
+﻿# DevMind
 
-> AI Memory Layer for development - Complete project context (codebase + database + memory)
+> Deterministic context and memory layer for AI coding agents.
+  Let Agent remember your design system, general context, and database.
 
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+## Install
 
-## Overview
+```bash
+npm install -g devmind
+```
 
-**DevMind** provides AI assistants with complete understanding of your project by combining:
+## Integrations
 
-- 🗂️ **Codebase Structure** - Hierarchical documentation of your code
-- 🗄️ **Database Schema** - Complete schema analysis with patterns
-- 🧠 **Persistent Memory** - Checkpoints, learnings, and evolution tracking
-- 🔍 **Context Slicing** - Focused context for optimized token usage
+### OpenClaw
 
-A single workflow generates everything your AI needs to understand your project deeply.
+```bash
+devmind openclaw-plugin --force
+```
 
-## Features
+Optional:
 
-- **Unified Context Generation** - Single command for complete project understanding
-- **Context Health Check** - `devmind status` reports freshness and recommends next action
-- **Context Slicing** - "Zoom in" on specific modules (`devmind context`)
-- **Learning Audit** - `devmind audit` checks code coverage against recorded learnings
-- **Learning Extraction** - `devmind extract` discovers reusable patterns from code and reports
-- **Crash-Safe Autosave** - `devmind autosave` journals session state and applies learnings
-- **Multi-Database Support** - PostgreSQL, MySQL, SQLite, MongoDB, Firebase
-- **Memory System** - Checkpoints, `LEARN.md`, session history
-- **Evolution Tracking** - Track both schema and codebase changes over time
-- **AI-Optimized Output** - Tailored for Claude, Cursor, Windsurf, and OpenClaw
+```bash
+devmind openclaw-plugin --project --force
+```
+
+Default install target:
+
+- `~/.openclaw/skills/devmind/SKILL.md`
+
+### Claude Code
+
+```bash
+devmind claude-plugin --force
+```
+
+This creates:
+
+- `.claude-plugin/marketplace.json`
+- `.claude-plugin/skills/devmind/SKILL.md`
+
+Then install that local folder in Claude Code using your plugin installer flow.
+
+### Codex (CLI + App)
+
+```bash
+devmind codex-plugin --force
+```
+
+Optional:
+
+```bash
+# Also install project-local skill
+devmind codex-plugin --project --force
+
+# Skip legacy mirror paths
+devmind codex-plugin --no-legacy --force
+```
+
+Default install targets:
+
+- `~/.agents/skills/devmind/SKILL.md`
+- `CODEX_HOME/skills/devmind/SKILL.md`
+- `~/.codex/skills/devmind/SKILL.md`
 
 ## Quick Start
 
 ```bash
-# Install
-npm install -g devmind
+# 1) Design system policy first
+devmind design-system --init
 
-# Zero-Friction (auto-detect DB config and generate DB context)
-devmind generate
-
-# Full context (database + codebase)
+# 2) Build overall context
 devmind generate --all
 
-# Or detailed setup
-devmind init
-```
-
-## Installation
-
-```bash
-npm install -g devmind
-# or
-pnpm add -g devmind
-```
-
-## Usage
-
-### ⚡ Zero-Friction Generation
-
-DevMind automatically detects your database configuration from `.env`, `prisma/schema.prisma`, `drizzle.config.ts`, or saved config.
-
-```bash
-# Auto-detects DB and generates database context
-devmind generate
-
-# Generate full context (database + codebase)
-devmind generate --all
-```
-
-If detection fails (or for first run):
-
-```bash
-devmind init --url "postgres://..."
-```
-
-### Context Slicing (Token Efficient)
-
-```bash
-# Get high-level map
-devmind context
-
-# Focus on specific module
-devmind context --focus src/database
-```
-
-### Memory Commands
-
-```bash
-# Save architectural decision
-devmind learn "Services use dependency injection" --category architecture
-
-# Save checkpoint
-devmind checkpoint -m "Before refactoring auth"
-
-# View history
-devmind history --unified
-```
-
-### Analyze Code-to-Database Usage
-
-```bash
-devmind analyze -p ./my-project
-```
-
-### Context Health and Drift Recommendations
-
-```bash
-# Show context freshness + recommended next command
-devmind status
-
-# Machine-readable preflight
+# 3) Validate freshness/recommendation
 devmind status --json
 ```
 
-### Learning Quality Loop
+You are ready when `.devmind/AGENTS.md` and `.devmind/index.json` exist.
+
+## Canonical Flow
+
+1. Design system
+2. Overall context
+3. Database checks
+
+## Quick Command Guide
+
+### Context lifecycle
 
 ```bash
-# Audit codebase coverage against LEARN.md
+devmind generate --all
+devmind scan
+devmind status --json
+```
+
+### Focused context
+
+```bash
+devmind context --focus src/features
+devmind context --query runbook
+devmind retrieve -q "auth middleware flow" --type architecture --json
+```
+
+### Learning loop
+
+```bash
 devmind audit
-
-# Extract learning candidates to report
 devmind extract
-
-# Extract and append learnings to memory/LEARN.md
 devmind extract --apply
+devmind autosave --source task-end
 ```
 
-### Crash-Safe Session Persistence
+### Database validation
 
 ```bash
-# Persist session journal + context + extracted learnings
-devmind autosave --source task-end
-
-# Persist without extraction/apply
-devmind autosave --no-extract
+devmind analyze
+devmind validate --strict
 ```
 
-### Agent-First Session Flow
+## Agent-First Runbook
 
 ```bash
 # 1) Preflight
 devmind status --json
 
-# 2) If stale/missing, run recommendedCommand from status output
-# 3) Re-check
-devmind status --json
+# 2) If stale, run recommendedCommand
 
-# 4) Do task, then autosave
+# 3) Execute with focused retrieval
+devmind retrieve -q "<task query>" --json
+
+# 4) Persist memory
 devmind autosave --source task-end
 ```
 
-## Integration
+## Key Outputs
 
-### OpenClaw
-
-DevMind is optimized for OpenClaw agents.
-See [OpenClaw Integration Skill](integrations/openclaw/SKILL.md) for agent instructions.
-
-### Cursor / Windsurf / Custom Agents
-
-1. Run `devmind generate --all`
-2. Point your AI to `.devmind/AGENTS.md`
-3. See [AI Agent Integration Guide](docs/AI_INTEGRATION.md) for detailed patterns.
-
-## Output Structure
-
-```
+```text
 .devmind/
-├── codebase/
-│   ├── codebase-overview.md
-│   ├── architecture.md
-│   └── modules/
-├── database/
-│   ├── schema-overview.md
-│   ├── schema.json
-│   └── ...
-├── memory/
-│   ├── checkpoints/
-│   ├── LEARN.md               # Persistent accumulated knowledge
-│   ├── SESSION_JOURNAL.md     # Incremental crash-safe journal
-│   ├── schema-evolution.md
-│   ├── codebase-evolution.md
-│   └── session-history.md
-├── analysis/
-│   ├── CODE_DB_MAPPING.md
-│   └── UNUSED_TABLES.md
-├── AGENTS.md                  # Unified context for AI
-├── devmind-tools.json         # Tool definitions for agents
-└── index.json
++-- AGENTS.md
++-- index.json
++-- design-system.json
++-- devmind-tools.json
++-- analysis/
+|   +-- AUDIT_REPORT.md
+|   +-- DESIGN_SYSTEM_AUDIT.md
+|   +-- CODE_DB_MAPPING.md
++-- memory/
+|   +-- LEARN.md
+|   +-- checkpoints/
+|   +-- SESSION_JOURNAL.md
++-- codebase/
++-- database/
 ```
 
 ## License
 
-Apache 2.0 © Nyan Lin Maung
+Apache 2.0 (c) Nyan Lin Maung
