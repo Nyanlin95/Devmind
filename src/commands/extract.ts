@@ -1,7 +1,15 @@
 import * as path from 'path';
 import * as fs from 'fs';
-import { glob } from 'glob';
-import { logger, ensureDir, writeFileSafe, readFileSafe } from '../core/index.js';
+import * as fsPromises from 'fs/promises';
+import {
+  logger,
+  ensureDir,
+  writeFileSafe,
+  readFileSafe,
+  createProfiler,
+  readCacheJson,
+  getSourceFilesWithCache,
+} from '../core/index.js';
 
 interface ExtractOptions {
   output?: string;
@@ -9,6 +17,7 @@ interface ExtractOptions {
   apply?: boolean;
   json?: boolean;
   silent?: boolean;
+  profile?: boolean;
 }
 
 export interface ExtractedLearning {
@@ -21,10 +30,62 @@ export interface ExtractResult {
   report: string;
   applied: boolean;
   learnPath: string | null;
+  sourceCache?: {
+    reused: number;
+    diskReads: number;
+  };
+  sourceListCache?: boolean;
+  profile?: {
+    totalMs: number;
+    steps: Array<{ name: string; ms: number }>;
+  };
+}
+
+interface AnalyzeCacheEntry {
+  mtimeMs: number;
+  size: number;
+  matches: string[];
+  content?: string;
+}
+
+interface AnalyzeCacheShape {
+  version?: number;
+  files?: Record<string, AnalyzeCacheEntry>;
+}
+
+async function readFilesInBatches(
+  rootPath: string,
+  relativePaths: string[],
+  batchSize: number = 48,
+): Promise<Map<string, string>> {
+  const results = new Map<string, string>();
+
+  for (let i = 0; i < relativePaths.length; i += batchSize) {
+    const batch = relativePaths.slice(i, i + batchSize);
+    const loaded = await Promise.all(
+      batch.map(async (relPath) => {
+        try {
+          const content = await fsPromises.readFile(path.join(rootPath, relPath), 'utf-8');
+          return { relPath, content };
+        } catch {
+          return null;
+        }
+      }),
+    );
+    for (const item of loaded) {
+      if (!item) continue;
+      results.set(item.relPath, item.content);
+    }
+  }
+
+  return results;
 }
 
 function normalizeSentence(input: string): string {
-  return input.trim().replace(/\s+/g, ' ').replace(/[.;:,]+$/, '');
+  return input
+    .trim()
+    .replace(/\s+/g, ' ')
+    .replace(/[.;:,]+$/, '');
 }
 
 function inferCategory(content: string): string {
@@ -32,7 +93,8 @@ function inferCategory(content: string): string {
   if (lc.includes('index') || lc.includes('query') || lc.includes('sql')) return 'database';
   if (lc.includes('cache') || lc.includes('latency') || lc.includes('batch')) return 'performance';
   if (lc.includes('auth') || lc.includes('permission') || lc.includes('tenant')) return 'security';
-  if (lc.includes('module') || lc.includes('service') || lc.includes('layer')) return 'architecture';
+  if (lc.includes('module') || lc.includes('service') || lc.includes('layer'))
+    return 'architecture';
   return 'codebase';
 }
 
@@ -90,7 +152,10 @@ function dedupeLearnings(items: ExtractedLearning[]): ExtractedLearning[] {
   return output;
 }
 
-async function appendToLearnFile(outputDir: string, learnings: ExtractedLearning[]): Promise<string> {
+async function appendToLearnFile(
+  outputDir: string,
+  learnings: ExtractedLearning[],
+): Promise<string> {
   const learnPath = path.join(outputDir, 'memory', 'LEARN.md');
   await ensureDir(path.dirname(learnPath));
 
@@ -113,6 +178,7 @@ async function appendToLearnFile(outputDir: string, learnings: ExtractedLearning
 }
 
 export async function runExtraction(options: ExtractOptions): Promise<ExtractResult> {
+  const profiler = createProfiler(!!options.profile);
   const outputDir = options.output || '.devmind';
   const rootPath = path.resolve(options.path || '.');
   const candidates: ExtractedLearning[] = [];
@@ -130,23 +196,60 @@ export async function runExtraction(options: ExtractOptions): Promise<ExtractRes
     }
   }
 
-  const sourceFiles = await glob('**/*.{ts,tsx,js,jsx,py,go,java,rb,php,rs}', {
-    cwd: rootPath,
-    ignore: ['node_modules/**', '.git/**', '.devmind/**', 'dist/**', 'build/**'],
-    nodir: true,
+  const sourceList = await profiler.section('extract.listSources', async () =>
+    getSourceFilesWithCache({
+      outputDir,
+      rootPath,
+      includeGlob: '**/*.{ts,tsx,js,jsx,py,go,java,rb,php,rs}',
+      ignore: ['node_modules/**', '.git/**', '.devmind/**', 'dist/**', 'build/**'],
+    }),
+  );
+  const sourceFiles = sourceList.files;
+
+  const analyzeCache = await profiler.section('extract.loadAnalyzeCache', async () => {
+    const cachePath = path.join(outputDir, 'cache', 'analyze-cache.json');
+    const parsed = await readCacheJson<AnalyzeCacheShape>(cachePath);
+    return parsed?.files || ({} as Record<string, AnalyzeCacheEntry>);
   });
 
-  for (const relPath of sourceFiles) {
-    const fullPath = path.join(rootPath, relPath);
-    try {
-      const content = fs.readFileSync(fullPath, 'utf-8');
-      candidates.push(...collectFromSourceComments(content));
-    } catch {
-      // ignore unreadable files
+  const sourceContents = new Map<string, string>();
+  const missingFiles: string[] = [];
+  let cacheReused = 0;
+  await profiler.section('extract.reuseCachedSources', async () => {
+    for (const relPath of sourceFiles) {
+      const cached = analyzeCache[relPath];
+      if (cached?.content === undefined) {
+        missingFiles.push(relPath);
+        continue;
+      }
+      const fullPath = path.join(rootPath, relPath);
+      try {
+        const stat = fs.statSync(fullPath);
+        if (stat.mtimeMs === cached.mtimeMs && stat.size === cached.size) {
+          sourceContents.set(relPath, cached.content);
+          cacheReused += 1;
+          continue;
+        }
+      } catch {
+        // fall through to missing path
+      }
+      missingFiles.push(relPath);
     }
+  });
+
+  const diskSourceContents = await profiler.section('extract.readSources', async () =>
+    readFilesInBatches(rootPath, missingFiles),
+  );
+  for (const [relPath, content] of diskSourceContents.entries()) {
+    sourceContents.set(relPath, content);
+  }
+  for (const content of sourceContents.values()) {
+    candidates.push(...collectFromSourceComments(content));
   }
 
-  const extracted = dedupeLearnings(candidates).slice(0, 25);
+  const extracted = dedupeLearnings(candidates)
+    .sort((a, b) => a.category.localeCompare(b.category) || a.content.localeCompare(b.content))
+    .slice(0, 25);
 
   const reportPath = path.join(outputDir, 'analysis', 'EXTRACTED_LEARNINGS.md');
   await ensureDir(path.dirname(reportPath));
@@ -163,15 +266,27 @@ export async function runExtraction(options: ExtractOptions): Promise<ExtractRes
 
   let learnPath: string | null = null;
   if (options.apply && extracted.length > 0) {
-    learnPath = await appendToLearnFile(outputDir, extracted);
+    learnPath = await profiler.section('extract.appendLearn', async () =>
+      appendToLearnFile(outputDir, extracted),
+    );
   }
 
-  return {
+  const result: ExtractResult = {
     extracted: extracted.length,
     report: reportPath,
     applied: !!options.apply,
     learnPath,
+    sourceCache: {
+      reused: cacheReused,
+      diskReads: missingFiles.length,
+    },
+    sourceListCache: sourceList.cacheHit,
   };
+  if (!options.json && !options.silent) {
+    logger.info(`Source cache reuse: ${cacheReused}, disk reads: ${missingFiles.length}`);
+  }
+  const profile = profiler.report();
+  return profile ? { ...result, profile } : result;
 }
 
 export async function extract(options: ExtractOptions): Promise<void> {

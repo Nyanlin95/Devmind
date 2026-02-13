@@ -7,7 +7,7 @@ import * as path from 'path';
 import { MemoryInfrastructure, SessionContext } from './memory.js';
 import { jsonSuccess, jsonError, outputJson, isJsonMode } from '../utils/json-output.js';
 import * as fs from 'fs/promises';
-import { logger, readFileSafe } from '../../core/index.js';
+import { logger, readFileSafe, failCommand } from '../../core/index.js';
 
 interface CheckpointOptions {
   restore?: boolean;
@@ -64,9 +64,8 @@ async function saveCheckpoint(
     logger.info(`   Session ID: ${context.sessionId}`);
     logger.info(`   Schema Hash: ${context.schemaHash}`);
   } catch (error) {
-    logger.error('Failed to save checkpoint:');
-    logger.error((error as Error).message);
-    process.exit(1);
+    failCommand('Failed to save checkpoint:', error);
+    return;
   }
 }
 
@@ -106,20 +105,19 @@ async function restoreCheckpoint(outputDir: string, memory: MemoryInfrastructure
     if (context.discoveries && context.discoveries.length > 0) {
       logger.info('Recent Discoveries:');
       context.discoveries.slice(-5).forEach((d) => {
-        logger.info(`   • ${d}`);
+        logger.info(`   - ${d}`);
       });
     }
 
     if (context.pendingQueries && context.pendingQueries.length > 0) {
       logger.info('Pending Queries:');
       context.pendingQueries.forEach((q) => {
-        logger.info(`   • ${q}`);
+        logger.info(`   - ${q}`);
       });
     }
   } catch (error) {
-    logger.error('Failed to restore checkpoint:');
-    logger.error((error as Error).message);
-    process.exit(1);
+    failCommand('Failed to restore checkpoint:', error);
+    return;
   }
 }
 
@@ -151,7 +149,7 @@ async function listCheckpoints(outputDir: string): Promise<void> {
       const timestamp = new Date(checkpoint.timestamp).toLocaleString();
       const message = checkpoint.message || 'No message';
 
-      logger.success(`  ✓ ${file}`);
+      logger.success(`  * ${file}`);
       logger.info(`    Time: ${timestamp}`);
       logger.info(`    Message: ${message}`);
       logger.info(`    Session: ${checkpoint.sessionId}`);

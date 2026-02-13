@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Memory Infrastructure
  * Creates and manages AI memory layer
  */
@@ -272,7 +272,7 @@ ${schema.tables.map((t) => `- ${t.name} (${t.columns.length} columns)`).join('\n
       sessionId: `session-${Date.now()}`,
       timestamp: new Date().toISOString(),
       schemaHash: this.calculateSchemaHash(schema),
-      schemaVersion: '1.0.2',
+      schemaVersion: '1.1.0',
       recentChanges: [],
       pendingQueries: [],
       discoveries: [

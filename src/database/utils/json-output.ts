@@ -45,3 +45,11 @@ export function outputJson(response: JsonResponse): void {
 export function isJsonMode(options: any): boolean {
   return options.json === true;
 }
+
+/**
+ * Output JSON error and set process exit code for command failures.
+ */
+export function outputJsonError(error: string | Error, exitCode: number = 1): void {
+  outputJson(jsonError(error));
+  process.exitCode = exitCode;
+}

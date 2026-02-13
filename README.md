@@ -1,7 +1,7 @@
 ﻿# DevMind
 
 > Deterministic context and memory layer for AI coding agents.
-  Let Agent remember your design system, general context, and database.
+> Let Agent remember your design system, general context, and database.
 
 ## Install
 
@@ -76,6 +76,18 @@ devmind status --json
 ```
 
 You are ready when `.devmind/AGENTS.md` and `.devmind/index.json` exist.
+
+## CI and npm Publish
+
+- CI runs on pushes to `main` and pull requests via `.github/workflows/ci.yml`.
+- npm publishing runs via `.github/workflows/publish-npm.yml` on tags like `v1.2.3` or manual dispatch.
+- Add repository secret `NPM_TOKEN` (npm automation token with publish permission).
+- Release by bumping `package.json` version, pushing commit, then pushing a matching tag:
+
+```bash
+git tag v1.1.1
+git push origin v1.1.1
+```
 
 ## Canonical Flow
 

@@ -58,7 +58,7 @@ export async function watch(options: WatchOptions): Promise<void> {
     logger.info(`Schema change detected, regenerating...`);
 
     try {
-      await generate({});
+      await generate({ throwOnError: true });
       logger.success('Regeneration complete');
     } catch (error) {
       logger.error('Regeneration failed:', error as Error);
@@ -91,6 +91,6 @@ export async function watch(options: WatchOptions): Promise<void> {
     logger.info('');
     logger.info('Stopping watch mode...');
     watchers.forEach((watcher) => watcher.close());
-    process.exit(0);
+    process.exitCode = 0;
   });
 }

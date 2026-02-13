@@ -1,12 +1,13 @@
 import * as path from 'path';
 import * as fs from 'fs';
-import { glob } from 'glob';
-import { logger, readFileSafe } from '../core/index.js';
+import * as fsPromises from 'fs/promises';
+import { logger, readFileSafe, createProfiler, getSourceFilesWithCache } from '../core/index.js';
 
 interface StatusOptions {
   output?: string;
   path?: string;
   json?: boolean;
+  profile?: boolean;
 }
 
 interface ContextStatus {
@@ -21,6 +22,7 @@ interface ContextStatus {
   lastGeneratedAt: string | null;
   stale: boolean;
   sourceLastModifiedAt: string | null;
+  sourceListCacheHit: boolean;
   recommendedCommand: string;
 }
 
@@ -36,30 +38,57 @@ function latestMtimeMs(paths: string[]): number | null {
   return latest;
 }
 
-async function getSourceLastModifiedMs(rootPath: string): Promise<number | null> {
-  const files = await glob('**/*.{ts,tsx,js,jsx,py,go,java,rb,php,rs}', {
-    cwd: rootPath,
+async function getSourceLastModifiedMs(
+  outputDir: string,
+  rootPath: string,
+  newerThanMs?: number,
+): Promise<{ latest: number | null; sourceListCacheHit: boolean }> {
+  const sourceList = await getSourceFilesWithCache({
+    outputDir,
+    rootPath,
+    includeGlob: '**/*.{ts,tsx,js,jsx,py,go,java,rb,php,rs}',
     ignore: ['node_modules/**', '.git/**', '.devmind/**', 'dist/**', 'build/**'],
-    nodir: true,
   });
+  const files = sourceList.files;
+
+  if (files.length === 0) return { latest: null, sourceListCacheHit: sourceList.cacheHit };
+
+  const maxConcurrency = 64;
+  const batches: string[][] = [];
+  for (let i = 0; i < files.length; i += maxConcurrency) {
+    batches.push(files.slice(i, i + maxConcurrency));
+  }
 
   let latest: number | null = null;
-  for (const relPath of files) {
-    const fullPath = path.join(rootPath, relPath);
-    try {
-      const stat = fs.statSync(fullPath);
-      if (latest === null || stat.mtimeMs > latest) {
-        latest = stat.mtimeMs;
-      }
-    } catch {
-      // Ignore files that disappeared during scan.
+  for (const batch of batches) {
+    const stats = await Promise.all(
+      batch.map(async (relPath) => {
+        try {
+          const stat = await fsPromises.stat(path.join(rootPath, relPath));
+          return stat.mtimeMs;
+        } catch {
+          return null;
+        }
+      }),
+    );
+    let batchMax: number | null = null;
+    for (const mtime of stats) {
+      if (mtime === null) continue;
+      if (batchMax === null || mtime > batchMax) batchMax = mtime;
+      if (latest === null || mtime > latest) latest = mtime;
+    }
+    if (newerThanMs !== undefined && batchMax !== null && batchMax > newerThanMs) {
+      return { latest: batchMax, sourceListCacheHit: sourceList.cacheHit };
     }
   }
 
-  return latest;
+  return { latest, sourceListCacheHit: sourceList.cacheHit };
 }
 
-async function getLastGeneratedTimestamp(contextIndexPath: string, contextFiles: string[]): Promise<number | null> {
+async function getLastGeneratedTimestamp(
+  contextIndexPath: string,
+  contextFiles: string[],
+): Promise<number | null> {
   if (fs.existsSync(contextIndexPath)) {
     try {
       const indexContent = await readFileSafe(contextIndexPath);
@@ -84,6 +113,7 @@ function chooseRecommendation(files: ContextStatus['files'], stale: boolean): st
 }
 
 export async function status(options: StatusOptions): Promise<void> {
+  const profiler = createProfiler(!!options.profile);
   const outputDir = options.output || '.devmind';
   const rootPath = path.resolve(options.path || '.');
 
@@ -100,8 +130,16 @@ export async function status(options: StatusOptions): Promise<void> {
   };
 
   const contextFiles = [agentsPath, indexPath, schemaPath, overviewPath];
-  const generatedMs = await getLastGeneratedTimestamp(indexPath, contextFiles);
-  const sourceMs = await getSourceLastModifiedMs(rootPath);
+  const generatedMs = await profiler.section('status.loadContextTimestamp', async () =>
+    getLastGeneratedTimestamp(indexPath, contextFiles),
+  );
+  const needsSourceScan = files.agents && files.index && generatedMs !== null;
+  const sourceScan = needsSourceScan
+    ? await profiler.section('status.scanSourceMtime', async () =>
+        getSourceLastModifiedMs(outputDir, rootPath, generatedMs || undefined),
+      )
+    : { latest: null, sourceListCacheHit: false };
+  const sourceMs = sourceScan.latest;
 
   const stale =
     !files.agents ||
@@ -116,11 +154,13 @@ export async function status(options: StatusOptions): Promise<void> {
     lastGeneratedAt: generatedMs ? new Date(generatedMs).toISOString() : null,
     stale,
     sourceLastModifiedAt: sourceMs ? new Date(sourceMs).toISOString() : null,
+    sourceListCacheHit: sourceScan.sourceListCacheHit,
     recommendedCommand: chooseRecommendation(files, stale),
   };
 
   if (options.json) {
-    console.log(JSON.stringify(result, null, 2));
+    const profile = profiler.report();
+    console.log(JSON.stringify(profile ? { ...result, profile } : result, null, 2));
     return;
   }
 
@@ -136,4 +176,13 @@ export async function status(options: StatusOptions): Promise<void> {
   logger.info(`Last source change: ${result.sourceLastModifiedAt || 'unknown'}`);
   logger.info(`Context freshness: ${result.stale ? 'stale' : 'fresh'}`);
   logger.info(`Recommended command: ${result.recommendedCommand}`);
+  logger.info(`Source list cache: ${sourceScan.sourceListCacheHit ? 'hit' : 'miss'}`);
+  const profile = profiler.report();
+  if (profile) {
+    logger.info('Performance Profile');
+    logger.info(`Total: ${profile.totalMs.toFixed(1)}ms`);
+    for (const step of profile.steps) {
+      logger.info(`- ${step.name}: ${step.ms.toFixed(1)}ms`);
+    }
+  }
 }

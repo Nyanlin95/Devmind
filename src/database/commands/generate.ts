@@ -4,7 +4,7 @@
  */
 
 import * as path from 'path';
-import { logger, ensureDir, writeFileSafe, readFileSafe, handleError } from '../../core/index.js';
+import { logger, ensureDir, writeFileSafe, readFileSafe, failCommand } from '../../core/index.js';
 import {
   createExtractor,
   ExtractorType,
@@ -14,7 +14,7 @@ import {
 import { TemplateGenerator } from '../generators/templates.js';
 import { LearningGenerator } from '../generators/learning-generator.js';
 import { MemoryInfrastructure } from './memory.js';
-import { jsonSuccess, jsonError, outputJson, isJsonMode } from '../utils/json-output.js';
+import { jsonSuccess, outputJson, isJsonMode, outputJsonError } from '../utils/json-output.js';
 import * as fs from 'fs'; // Keep fs for existsSync checks
 import { fileURLToPath } from 'url';
 import { ensureWorkspaceAgentsBootstrap } from '../../generators/unified.js';
@@ -34,6 +34,7 @@ interface GenerateOptions {
   firebaseKey?: string;
   firebaseProject?: string;
   json?: boolean;
+  throwOnError?: boolean;
 }
 
 function resolveTemplatesDir(): string {
@@ -124,8 +125,24 @@ export async function generate(options: GenerateOptions): Promise<void> {
       extractorType = 'drizzle';
       schemaPath = 'src/db/schema.ts';
       connectionString = 'dummy';
+    } else if (options.mongodb) {
+      extractorType = 'mongodb';
+      connectionString = options.mongodb;
+      if (!connectionString) {
+        throw new Error(
+          'MongoDB connection URL required. Use --mongodb, --url, or DATABASE_URL env var.',
+        );
+      }
+    } else if (options.firebaseProject || process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+      extractorType = 'firebase';
+      connectionString = 'dummy'; // Not used for Firebase
     } else if (connectionString) {
-      if (connectionString.startsWith('mysql')) {
+      if (
+        connectionString.startsWith('mongodb://') ||
+        connectionString.startsWith('mongodb+srv://')
+      ) {
+        extractorType = 'mongodb';
+      } else if (connectionString.startsWith('mysql')) {
         extractorType = 'mysql';
       } else if (
         connectionString.startsWith('file:') ||
@@ -148,25 +165,13 @@ export async function generate(options: GenerateOptions): Promise<void> {
         extractorType = 'drizzle';
         schemaPath = 'src/db/schema.ts';
         connectionString = 'dummy';
-      } else if (
-        options.mongodb ||
-        (connectionString &&
-          (connectionString.startsWith('mongodb://') ||
-            connectionString.startsWith('mongodb+srv://')))
-      ) {
-        if (!isJson) logger.info('Detected MongoDB connection...');
-        extractorType = 'mongodb';
-        connectionString = options.mongodb || connectionString;
-        if (!connectionString) {
-          throw new Error('MongoDB connection URL required. Use --url or DATABASE_URL env var.');
-        }
       } else if (options.firebaseProject || process.env.GOOGLE_APPLICATION_CREDENTIALS) {
         if (!isJson) logger.info('Detected Firebase project...');
         extractorType = 'firebase';
         connectionString = 'dummy'; // Not used for Firebase
       } else {
         throw new Error(
-          'Database connection not found. Use --url, --sqlite, --prisma, --drizzle, or --mongodb.',
+          'Database connection not found. Use --url, --sqlite, --prisma, --drizzle, --mongodb, or --firebase-project.',
         );
       }
     }
@@ -309,10 +314,16 @@ export async function generate(options: GenerateOptions): Promise<void> {
     });
   } catch (error) {
     if (isJsonMode(options)) {
-      outputJson(jsonError(error as Error));
-      process.exit(1);
-    } else {
-      handleError(error as Error);
+      outputJsonError(error as Error);
+      if (options.throwOnError) {
+        throw error;
+      }
+      return;
     }
+    if (options.throwOnError) {
+      throw error;
+    }
+    failCommand('Generation failed', error);
+    return;
   }
 }

@@ -85,6 +85,25 @@ Run all tests:
 npm test
 ```
 
+Run end-to-end CLI integration tests:
+
+```bash
+npm run test:e2e
+```
+
+Run the full release gate locally:
+
+```bash
+npm run release:check
+```
+
+## CI and Release
+
+- CI workflow: `.github/workflows/ci.yml`
+- npm publish workflow: `.github/workflows/publish-npm.yml`
+- Publish trigger: push a tag in the format `v<package-version>` (for example `v1.1.1`)
+- Required repo secret: `NPM_TOKEN`
+
 ### Linking Locally
 
 To test the CLI globally while developing:
@@ -98,7 +117,7 @@ npm link
 
 1. Create a feature branch (`git checkout -b feature/amazing-feature`).
 2. Commit your changes (we follow [Conventional Commits](https://www.conventionalcommits.org/)).
-3. Ensure tests pass (`npm test`).
+3. Ensure checks pass (`npm run lint && npm test && npm run test:e2e`).
 4. Open a Pull Request.
 
 ## License

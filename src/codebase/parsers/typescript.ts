@@ -18,6 +18,10 @@ export interface CodeExport {
  */
 export function parseFile(filePath: string): CodeExport[] {
   const fileContent = fs.readFileSync(filePath, 'utf-8');
+  return parseSourceFile(filePath, fileContent);
+}
+
+export function parseSourceFile(filePath: string, fileContent: string): CodeExport[] {
   const sourceFile = ts.createSourceFile(filePath, fileContent, ts.ScriptTarget.Latest, true);
 
   const exports: CodeExport[] = [];
@@ -119,6 +123,16 @@ function extractDetails(
         }
       });
       return declarations;
+    }
+
+    case ts.SyntaxKind.ExportAssignment: {
+      const exportNode = node as ts.ExportAssignment;
+      return {
+        type: 'variable',
+        name: 'default',
+        signature: exportNode.getText(sourceFile),
+        doc: getJSDoc(exportNode),
+      };
     }
 
     default:

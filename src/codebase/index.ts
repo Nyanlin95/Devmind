@@ -12,7 +12,7 @@ export * from './utils/tree.js';
 export * from './utils/stats.js';
 export * from './utils/hashing.js';
 
-import { scanDirectory } from './scanners/filesystem.js';
+import { scanDirectoryAsync } from './scanners/filesystem.js';
 import { generateOverview } from './generators/overview.js';
 import { generateArchitecture } from './generators/architecture.js';
 import { generateModuleDocs } from './generators/modules.js';
@@ -33,12 +33,12 @@ export interface ScanResult {
 export async function scanCodebase(rootPath: string, outputDir: string): Promise<ScanResult> {
   logger.info(`Scanning codebase at: ${rootPath}`);
 
-  const structure = scanDirectory(rootPath);
+  const structure = await scanDirectoryAsync(rootPath);
 
   logger.info('Generating documentation...');
 
   const overview = generateOverview(structure, rootPath);
-  const architecture = generateArchitecture();
+  const architecture = generateArchitecture(structure, rootPath);
   const modules = generateModuleDocs(structure, outputDir);
   const tree = generateTree(structure);
 

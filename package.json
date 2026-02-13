@@ -1,6 +1,6 @@
 {
   "name": "devmind",
-  "version": "1.0.2",
+  "version": "1.1.1",
   "description": "AI Memory Layer for development - Complete project context (codebase + database + memory)",
   "type": "module",
   "files": [
@@ -17,9 +17,10 @@
   "scripts": {
     "build": "tsc",
     "prepack": "npm run build",
-    "pack:dry": "npm pack --dry-run",
+    "pack:dry": "npm pack --dry-run --cache .npm-cache",
     "dev": "ts-node --esm src/cli.ts",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.config.cjs --runInBand",
+    "test:e2e": "npm run build && node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.config.cjs --runInBand tests/cli/integration.test.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "tsc --noEmit",

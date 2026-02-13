@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Handoff Command
  *
  * Multi-agent handoff management for DevMind.
@@ -7,7 +7,14 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
-import { logger, ensureDir, writeFileSafe, readFileSafe, writeJSON } from '../../core/index.js';
+import {
+  logger,
+  ensureDir,
+  writeFileSafe,
+  readFileSafe,
+  writeJSON,
+  failCommand,
+} from '../../core/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -95,7 +102,8 @@ async function listSessions(outputDir: string): Promise<void> {
       logger.info('No handoff sessions found.');
       logger.info('Record a session with: devmind handoff --record');
     } else {
-      throw error;
+      failCommand('Failed to list handoff sessions:', error);
+      return;
     }
   }
 }
@@ -259,13 +267,13 @@ function generateHandoffMarkdown(
 
 | Step | Action | Result |
 |------|--------|--------|
-| 1 | Initial setup | ✅ Complete |
+| 1 | Initial setup | âœ… Complete |
 
 ---
 
 ## What Succeeded
 
-- ✅ Success item 1
+- âœ… Success item 1
 
 ---
 
@@ -342,14 +350,14 @@ function generateStateMarkdown(
 ## Progress
 
 ### Completed Steps
-- ✅ Initial session recorded
+- âœ… Initial session recorded
 
 ### Current Step
 - Session initialization
 
 ### Remaining Steps
-- ⏳ Define goals
-- ⏳ Execute work
+- â³ Define goals
+- â³ Execute work
 
 ---
 
@@ -376,7 +384,7 @@ function generateContextJson(
 ): string {
   return JSON.stringify(
     {
-      version: '1.0.2',
+      version: '1.1.0',
       session: {
         id: sessionId,
         agentId: agentId,

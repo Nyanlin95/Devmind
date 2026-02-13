@@ -4,7 +4,7 @@
  */
 
 import * as path from 'path';
-import { logger, readFileSafe, handleError } from '../../core/index.js';
+import { logger, readFileSafe, failCommand } from '../../core/index.js';
 import {
   createExtractor,
   ExtractorType,
@@ -220,7 +220,8 @@ export async function validate(options: ValidateOptions): Promise<void> {
 
       if (options.strict && (result.errors.length > 0 || result.warnings.length > 0)) {
         logger.error('Validation failed in strict mode');
-        process.exit(1);
+        process.exitCode = 1;
+        return;
       }
     }
 
@@ -231,10 +232,10 @@ export async function validate(options: ValidateOptions): Promise<void> {
     logger.info(`   Errors: ${result.errors.length}`);
     logger.info(`   Warnings: ${result.warnings.length}`);
   } catch (error) {
-    logger.error('Validation failed:', error as Error);
-
     if (options.strict) {
-      process.exit(1);
+      failCommand('Validation failed:', error);
+      return;
     }
+    logger.error('Validation failed:', error as Error);
   }
 }

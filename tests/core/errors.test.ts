@@ -11,34 +11,33 @@ let handleError: typeof import('../../src/core/errors.js').handleError;
 let wrapAsync: typeof import('../../src/core/errors.js').wrapAsync;
 let DevMindError: typeof import('../../src/core/errors.js').DevMindError;
 let DatabaseError: typeof import('../../src/core/errors.js').DatabaseError;
+let withCliErrorHandling: typeof import('../../src/core/errors.js').withCliErrorHandling;
 let logger: typeof import('../../src/core/logger.js').logger;
 
 describe('Errors', () => {
-  let processExitSpy: any;
   let consoleErrorSpy: any;
+  let consoleLogSpy: any;
 
   beforeEach(async () => {
-    ({ handleError, wrapAsync, DevMindError, DatabaseError } =
+    ({ handleError, wrapAsync, DevMindError, DatabaseError, withCliErrorHandling } =
       await import('../../src/core/errors.js'));
     ({ logger } = await import('../../src/core/logger.js'));
 
-    processExitSpy = jest
-      .spyOn(process, 'exit')
-      .mockImplementation((code?: number | string | null | undefined) => {
-        throw new Error(`Process.exit called with ${code}`);
-      });
+    process.exitCode = undefined;
     consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    consoleLogSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
     jest.clearAllMocks();
   });
 
   afterEach(() => {
+    process.exitCode = undefined;
     jest.restoreAllMocks();
   });
 
   it('should handle known DevMindError', () => {
     const err = new DevMindError('oops');
 
-    expect(() => handleError(err)).toThrow('Process.exit called with 1');
+    expect(() => handleError(err)).toThrow('oops');
 
     expect(logger.error).toHaveBeenCalledWith('oops');
   });
@@ -46,7 +45,7 @@ describe('Errors', () => {
   it('should handle unexpected errors', () => {
     const err = new Error('boom');
 
-    expect(() => handleError(err)).toThrow('Process.exit called with 1');
+    expect(() => handleError(err)).toThrow('boom');
 
     expect(logger.error).toHaveBeenCalledWith('Unexpected error: boom');
   });
@@ -55,7 +54,7 @@ describe('Errors', () => {
     const err = new Error('boom');
     err.stack = 'stack trace';
 
-    expect(() => handleError(err, true)).toThrow('Process.exit called with 1');
+    expect(() => handleError(err, true)).toThrow('boom');
 
     expect(consoleErrorSpy).toHaveBeenCalledWith('stack trace');
   });
@@ -66,7 +65,7 @@ describe('Errors', () => {
     };
     const wrapped = wrapAsync(fn);
 
-    await expect(wrapped()).rejects.toThrow('Process.exit called with 1');
+    await expect(wrapped()).rejects.toThrow('db failed');
     expect(logger.error).toHaveBeenCalledWith('db failed');
   });
 
@@ -75,5 +74,33 @@ describe('Errors', () => {
     const wrapped = wrapAsync(fn);
 
     await expect(wrapped()).resolves.toBe('success');
+  });
+
+  it('should output JSON error for wrapped CLI command when json option is true', async () => {
+    const wrapped = withCliErrorHandling('test-cmd', async (..._args: any[]) => {
+      throw new Error('json failure');
+    });
+
+    await wrapped('arg', { json: true } as any);
+
+    expect(process.exitCode).toBe(1);
+    expect(consoleLogSpy).toHaveBeenCalledTimes(1);
+    const payload = JSON.parse(consoleLogSpy.mock.calls[0][0]);
+    expect(payload.success).toBe(false);
+    expect(payload.error).toBe('json failure');
+    expect(payload.command).toBe('test-cmd');
+  });
+
+  it('should log human-readable failure for wrapped CLI command when json option is false', async () => {
+    const wrapped = withCliErrorHandling('test-cmd', async (..._args: any[]) => {
+      throw new Error('human failure');
+    });
+
+    await wrapped('arg', { json: false } as any);
+
+    expect(process.exitCode).toBe(1);
+    expect(consoleLogSpy).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith('Command "test-cmd" failed');
+    expect(logger.error).toHaveBeenCalledWith('human failure');
   });
 });

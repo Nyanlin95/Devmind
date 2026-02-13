@@ -13,6 +13,7 @@ jest.unstable_mockModule('../../src/core', () => ({
 
 jest.unstable_mockModule('../../src/codebase/parsers/typescript.js', () => ({
   parseFile: jest.fn().mockReturnValue([]),
+  parseSourceFile: jest.fn().mockReturnValue([]),
   CodeExport: {},
 }));
 

@@ -41,6 +41,8 @@ describe('TypeScript Parser', () => {
         export type ID = string | number;
 
         export const MAX_RETRIES = 3;
+        const defaultExportValue = 123;
+        export default defaultExportValue;
 
         function internalOnly(): void {}
         class Hidden {}
@@ -93,6 +95,14 @@ describe('TypeScript Parser', () => {
     const exports = parseFile(testFile);
     const v = exports.find((e) => e.type === 'variable' && e.name === 'MAX_RETRIES');
     expect(v).toBeDefined();
+  });
+
+  it('should parse export default assignment', () => {
+    const exports = parseFile(testFile);
+    const defaultExport = exports.find((e) => e.type === 'variable' && e.name === 'default');
+
+    expect(defaultExport).toBeDefined();
+    expect(defaultExport?.signature).toContain('export default defaultExportValue');
   });
 
   it('should not include non-exported top-level declarations', () => {

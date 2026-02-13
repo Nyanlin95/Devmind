@@ -1,11 +1,176 @@
-import * as path from 'path';
+﻿import * as path from 'path';
+import * as fs from 'fs/promises';
+import { createHash } from 'crypto';
 import { readFileSafe, writeFileSafe, ensureDir, logger } from '../core/index.js';
 
 const START_MARKER = '<!-- devmind:auto-context:start -->';
 const END_MARKER = '<!-- devmind:auto-context:end -->';
+const SECTION_START = '<!-- devmind:section';
+const SECTION_END = '<!-- /devmind:section';
+
+type SectionType =
+  | 'architecture'
+  | 'database'
+  | 'business-logic'
+  | 'codebase'
+  | 'design-system'
+  | 'memory'
+  | 'capabilities'
+  | 'runbook';
+
+interface UnifiedDocSection {
+  id: string;
+  title: string;
+  type: SectionType;
+  tags: string[];
+  priority: 'high' | 'medium' | 'low';
+  source: string;
+  content: string;
+}
+
+export interface IndexSection {
+  id: string;
+  title: string;
+  type: SectionType;
+  tags: string[];
+  priority: 'high' | 'medium' | 'low';
+  source: string;
+  startLine: number;
+  endLine: number;
+  contentHash: string;
+}
+
+interface ParsedSection {
+  id: string;
+  startLine: number;
+  endLine: number;
+  content: string;
+}
+
+interface DesignSystemProfile {
+  name: string;
+  version: string;
+  allowedComponentImports?: string[];
+  tokenSources?: string[];
+  requiredWrappers?: string[];
+  bannedRegexRules?: Array<{
+    id?: string;
+    pattern?: string;
+    message?: string;
+  }>;
+}
 
 function toPosixPath(filePath: string): string {
   return filePath.replace(/\\/g, '/');
+}
+
+function hashContent(content: string): string {
+  return createHash('sha256').update(content, 'utf8').digest('hex').slice(0, 16);
+}
+
+function serializeSectionMetadata(section: UnifiedDocSection): string {
+  const tags = section.tags.join(',');
+  return `${SECTION_START} id=${section.id} type=${section.type} priority=${section.priority} source=${section.source} tags=${tags} -->`;
+}
+
+function renderSection(section: UnifiedDocSection): string {
+  return [
+    serializeSectionMetadata(section),
+    `## ${section.title}`,
+    section.content.trim() || '(No context available)',
+    `${SECTION_END} id=${section.id} -->`,
+  ].join('\n');
+}
+
+function parseSectionsFromAgentsContent(agentsContent: string): ParsedSection[] {
+  const lines = agentsContent.split('\n');
+  const parsed: ParsedSection[] = [];
+  const idRegex = /id=([a-z0-9._-]+)/i;
+
+  let current: { id: string; startLine: number; contentLines: string[] } | null = null;
+  lines.forEach((line, idx) => {
+    const lineNo = idx + 1;
+    if (line.startsWith(SECTION_START)) {
+      const idMatch = line.match(idRegex);
+      if (!idMatch) return;
+      current = {
+        id: idMatch[1],
+        startLine: lineNo + 1,
+        contentLines: [],
+      };
+      return;
+    }
+    if (line.startsWith(SECTION_END)) {
+      if (!current) return;
+      parsed.push({
+        id: current.id,
+        startLine: current.startLine,
+        endLine: lineNo - 1,
+        content: current.contentLines.join('\n').trim(),
+      });
+      current = null;
+      return;
+    }
+    if (current) current.contentLines.push(line);
+  });
+
+  return parsed;
+}
+
+async function replaceFile(tempPath: string, targetPath: string): Promise<void> {
+  await fs.rm(targetPath, { force: true });
+  await fs.rename(tempPath, targetPath);
+}
+
+function buildIndexSections(
+  declaredSections: UnifiedDocSection[],
+  parsedSections: ParsedSection[],
+): IndexSection[] {
+  const parsedById = new Map(parsedSections.map((section) => [section.id, section]));
+
+  return declaredSections.map((declared) => {
+    const parsed = parsedById.get(declared.id);
+    if (!parsed) {
+      throw new Error(`Missing section marker for id=${declared.id}`);
+    }
+
+    return {
+      id: declared.id,
+      title: declared.title,
+      type: declared.type,
+      tags: declared.tags,
+      priority: declared.priority,
+      source: declared.source,
+      startLine: parsed.startLine,
+      endLine: parsed.endLine,
+      contentHash: hashContent(parsed.content),
+    };
+  });
+}
+
+function validateSectionSync(indexSections: IndexSection[], parsedSections: ParsedSection[]): void {
+  const ids = new Set<string>();
+  for (const section of indexSections) {
+    if (ids.has(section.id)) {
+      throw new Error(`Duplicate index section id=${section.id}`);
+    }
+    ids.add(section.id);
+  }
+
+  const parsedById = new Map(parsedSections.map((section) => [section.id, section]));
+  for (const indexSection of indexSections) {
+    const parsed = parsedById.get(indexSection.id);
+    if (!parsed) {
+      throw new Error(`Section not found in AGENTS.md: ${indexSection.id}`);
+    }
+    if (indexSection.startLine > indexSection.endLine) {
+      throw new Error(`Invalid section line range for ${indexSection.id}`);
+    }
+    const parsedHash = hashContent(parsed.content);
+    if (parsedHash !== indexSection.contentHash) {
+      throw new Error(`Hash mismatch for section ${indexSection.id}`);
+    }
+  }
 }
 
 function buildAutoContextBlock(outputDir: string): string {
@@ -66,32 +231,29 @@ export async function generateUnifiedDocs(outputDir: string): Promise<void> {
     path.join(outputDir, 'database', 'BUSINESS_LOGIC.md'),
   ).catch(() => '');
   const learnings = await readFileSafe(path.join(memoryDir, 'LEARN.md')).catch(() => '');
+  const designSystemRaw = await readFileSafe(path.join(outputDir, 'design-system.json')).catch(
+    () => '',
+  );
 
-  // Generate AGENTS.md (Consolidated Context in QMD Format)
-  const agentsContent = `
-# Project Context
+  let designSystemProfile: DesignSystemProfile | null = null;
+  if (designSystemRaw) {
+    try {
+      designSystemProfile = JSON.parse(designSystemRaw) as DesignSystemProfile;
+    } catch (error) {
+      logger.warn(`Failed to parse design-system.json: ${(error as Error).message}`);
+    }
+  }
 
-> Generated by DevMind for AI Agents (Claude, Cursor, Windsurf)
+  const sourceMap = {
+    architecture: 'codebase/architecture.md',
+    database: 'database/schema-overview.md',
+    businessLogic: 'database/BUSINESS_LOGIC.md',
+    codebase: 'codebase/codebase-overview.md',
+    designSystem: 'design-system.json',
+    learnings: 'memory/LEARN.md',
+  };
 
-## Architecture
-${architecture || '(No architecture context available)'}
-
-## Database Schema
-${schemaContext ? 'See schema-overview.md for details.' : '(No database context available)'}
-
-## Business Logic
-${businessLogic || '(No business logic detected)'}
-
-## Codebase Overview
-${codebaseOverview || '(No codebase overview available)'}
-
-## Project Learnings
-${learnings || '(No learnings recorded)'}
-
----
-
-## Agent Capabilities
-
+  const capabilityContent = `
 <tools>
   <tool name="devmind-scan">
     <description>Scan codebase structure and generate QMD summary.</description>
@@ -111,6 +273,12 @@ ${learnings || '(No learnings recorded)'}
   <tool name="devmind-autosave">
     <description>Persist session journal/context and auto-apply extracted learnings.</description>
   </tool>
+  <tool name="devmind-retrieve">
+    <description>Retrieve focused context using index metadata filters and AGENTS section chunks.</description>
+  </tool>
+  <tool name="devmind-design-system">
+    <description>Initialize or inspect design-system.json used for UI alignment auditing and agent guidance.</description>
+  </tool>
   <tool name="devmind-learn">
     <description>Save a new technical learning, pattern, or architectural decision to LEARN.md.</description>
     <arguments>
@@ -125,9 +293,24 @@ ${learnings || '(No learnings recorded)'}
     </arguments>
   </tool>
 </tools>
+`.trim();
 
-## Instructions
+  const designSystemContent = designSystemProfile
+    ? `
+Design system profile: \`${designSystemProfile.name || 'unnamed'}\` (v${designSystemProfile.version || 'n/a'})
 
+- Allowed component imports: ${(designSystemProfile.allowedComponentImports || []).map((value) => `\`${value}\``).join(', ') || '(none configured)'}
+- Token sources: ${(designSystemProfile.tokenSources || []).map((value) => `\`${value}\``).join(', ') || '(none configured)'}
+- Required wrappers: ${(designSystemProfile.requiredWrappers || []).map((value) => `\`${value}\``).join(', ') || '(none configured)'}
+- Banned rules: ${
+        (designSystemProfile.bannedRegexRules || [])
+          .map((rule) => `\`${rule.id || 'rule'}\` (${rule.message || 'no message'})`)
+          .join('; ') || '(none configured)'
+      }
+`.trim()
+    : 'No design-system profile found. Run `devmind design-system --init` and customize `.devmind/design-system.json`.';
+
+  const runbookContent = `
 ### Agent Runbook (Auto Workflow, Recommendation Drift Control)
 1. Automatically run \`devmind status --json\` at session start.
 2. If context is stale/missing, automatically run the returned \`recommendedCommand\` (drift control remains recommendation-based).
@@ -143,26 +326,127 @@ ${learnings || '(No learnings recorded)'}
 - **Memory:** Use \`LEARN.md\` to keep decisions consistent across sessions.
 `.trim();
 
-  await writeFileSafe(path.join(outputDir, 'AGENTS.md'), agentsContent);
+  const sections: UnifiedDocSection[] = [
+    {
+      id: 'architecture.overview',
+      title: 'Architecture',
+      type: 'architecture',
+      tags: ['architecture', 'layers', 'patterns'],
+      priority: 'high',
+      source: sourceMap.architecture,
+      content: architecture || '(No architecture context available)',
+    },
+    {
+      id: 'database.schema',
+      title: 'Database Schema',
+      type: 'database',
+      tags: ['database', 'schema', 'tables'],
+      priority: 'high',
+      source: sourceMap.database,
+      content: schemaContext
+        ? 'See schema-overview.md for details.'
+        : '(No database context available)',
+    },
+    {
+      id: 'business.logic',
+      title: 'Business Logic',
+      type: 'business-logic',
+      tags: ['business', 'rules', 'domain'],
+      priority: 'medium',
+      source: sourceMap.businessLogic,
+      content: businessLogic || '(No business logic detected)',
+    },
+    {
+      id: 'codebase.overview',
+      title: 'Codebase Overview',
+      type: 'codebase',
+      tags: ['codebase', 'modules', 'entrypoints'],
+      priority: 'high',
+      source: sourceMap.codebase,
+      content: codebaseOverview || '(No codebase overview available)',
+    },
+    {
+      id: 'memory.learnings',
+      title: 'Project Learnings',
+      type: 'memory',
+      tags: ['memory', 'learnings', 'decisions'],
+      priority: 'medium',
+      source: sourceMap.learnings,
+      content: learnings || '(No learnings recorded)',
+    },
+    {
+      id: 'ui.design-system',
+      title: 'Design System',
+      type: 'design-system',
+      tags: ['ui', 'design-system', 'components', 'tokens'],
+      priority: 'high',
+      source: sourceMap.designSystem,
+      content: designSystemContent,
+    },
+    {
+      id: 'agent.capabilities',
+      title: 'Agent Capabilities',
+      type: 'capabilities',
+      tags: ['tools', 'capabilities', 'commands'],
+      priority: 'medium',
+      source: 'devmind-tools.json',
+      content: capabilityContent,
+    },
+    {
+      id: 'agent.runbook',
+      title: 'Instructions',
+      type: 'runbook',
+      tags: ['runbook', 'workflow', 'status', 'autosave'],
+      priority: 'high',
+      source: 'AGENTS.md',
+      content: runbookContent,
+    },
+  ];
+
+  // Generate AGENTS.md (Consolidated Context in QMD Format)
+  const agentsContent = `
+# Project Context
+
+> Generated by DevMind for AI Agents (Claude, Cursor, Windsurf)
+
+${sections.map((section) => renderSection(section)).join('\n\n')}
+
+---
+`.trim();
+  const parsedSections = parseSectionsFromAgentsContent(agentsContent);
+  const indexSections = buildIndexSections(sections, parsedSections);
+  validateSectionSync(indexSections, parsedSections);
 
   // Generate unified index.json
   const index = {
     timestamp: new Date().toISOString(),
-    version: '1.0.2',
+    version: '1.1.0',
     contexts: {
       agents: 'AGENTS.md',
       schema: 'database/schema-overview.md',
       codebase: 'codebase/codebase-overview.md',
       architecture: 'codebase/architecture.md',
+      designSystem: 'design-system.json',
       learnings: 'memory/LEARN.md',
     },
     metadata: {
       hasDatabase: !!schemaContext,
       hasCodebase: !!codebaseOverview,
+      hasDesignSystem: !!designSystemProfile,
     },
+    sections: indexSections,
   };
 
-  await writeFileSafe(path.join(outputDir, 'index.json'), JSON.stringify(index, null, 2));
+  const agentsPath = path.join(outputDir, 'AGENTS.md');
+  const indexPath = path.join(outputDir, 'index.json');
+  const agentsTempPath = `${agentsPath}.tmp`;
+  const indexTempPath = `${indexPath}.tmp`;
+
+  await writeFileSafe(agentsTempPath, agentsContent);
+  await writeFileSafe(indexTempPath, JSON.stringify(index, null, 2));
+
+  await replaceFile(agentsTempPath, agentsPath);
+  await replaceFile(indexTempPath, indexPath);
 
   logger.success('Unified documentation generated:');
   logger.info(`   - ${path.join(outputDir, 'AGENTS.md')}`);
@@ -193,6 +477,147 @@ ${learnings || '(No learnings recorded)'}
           path: {
             type: 'string',
             description: 'The root path to analyze (default: current directory)',
+          },
+        },
+      },
+    },
+    {
+      name: 'devmind_status',
+      description:
+        'Checks context freshness and returns a recommended next command when generated context is stale or missing.',
+      parameters: {
+        type: 'object',
+        properties: {
+          output: {
+            type: 'string',
+            description: 'Context output directory (default: .devmind)',
+          },
+          path: {
+            type: 'string',
+            description: 'Root path for source freshness checks (default: current directory)',
+          },
+        },
+      },
+    },
+    {
+      name: 'devmind_audit',
+      description:
+        'Audits codebase coverage against recorded learnings in memory/LEARN.md and writes an audit report.',
+      parameters: {
+        type: 'object',
+        properties: {
+          output: {
+            type: 'string',
+            description: 'Context output directory (default: .devmind)',
+          },
+          path: {
+            type: 'string',
+            description: 'Root path to audit (default: current directory)',
+          },
+        },
+      },
+    },
+    {
+      name: 'devmind_extract',
+      description:
+        'Extracts learning candidates from analysis artifacts and source comments, with optional apply to LEARN.md.',
+      parameters: {
+        type: 'object',
+        properties: {
+          output: {
+            type: 'string',
+            description: 'Context output directory (default: .devmind)',
+          },
+          path: {
+            type: 'string',
+            description: 'Root path to scan for comments (default: current directory)',
+          },
+          apply: {
+            type: 'boolean',
+            description: 'Append extracted learning candidates into memory/LEARN.md',
+          },
+        },
+      },
+    },
+    {
+      name: 'devmind_autosave',
+      description:
+        'Persists crash-safe session journal/context and auto-applies extracted learnings.',
+      parameters: {
+        type: 'object',
+        properties: {
+          output: {
+            type: 'string',
+            description: 'Context output directory (default: .devmind)',
+          },
+          path: {
+            type: 'string',
+            description: 'Root path for extraction (default: current directory)',
+          },
+          source: {
+            type: 'string',
+            description: 'Autosave source label (e.g., task-end, scan, generate)',
+          },
+          note: {
+            type: 'string',
+            description: 'Optional note attached to journal/context state',
+          },
+        },
+      },
+    },
+    {
+      name: 'devmind_retrieve',
+      description:
+        'Performs two-stage retrieval using index metadata as filter and AGENTS.md sections as content.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: {
+            type: 'string',
+            description: 'Retrieval query',
+          },
+          output: {
+            type: 'string',
+            description: 'Context output directory (default: .devmind)',
+          },
+          type: {
+            type: 'string',
+            description: 'Optional section type filter',
+          },
+          tags: {
+            type: 'string',
+            description: 'Optional comma-separated tags filter',
+          },
+          limit: {
+            type: 'number',
+            description: 'Max sections to return (default: 6)',
+          },
+          max_words: {
+            type: 'number',
+            description: 'Approximate max words in output (default: 1400)',
+          },
+        },
+        required: ['query'],
+      },
+    },
+    {
+      name: 'devmind_design_system',
+      description:
+        'Initializes or reads the design system profile used to keep UI code aligned with component/token policies.',
+      parameters: {
+        type: 'object',
+        properties: {
+          output: {
+            type: 'string',
+            description: 'Context output directory (default: .devmind)',
+          },
+          init: {
+            type: 'boolean',
+            description: 'Create default profile file if missing',
+          },
+          force: {
+            type: 'boolean',
+            description: 'Overwrite profile when used with init',
           },
         },
       },

@@ -223,4 +223,19 @@ describe('DevMind CLI Integration', () => {
     expect(content).toContain('Always use UUIDs');
     expect(content).toContain('architecture');
   });
+
+  test('should list handoff sessions after recording one', async () => {
+    if (!canSpawnProcesses) return;
+
+    const { stdout: recordOut } = await runDevMind('handoff --record --agentId integration-agent');
+    expect(recordOut).toContain('Session recorded: sess_');
+    const sessionIdMatch = recordOut.match(/Session recorded:\s+(sess_[^\s]+)/);
+    expect(sessionIdMatch).not.toBeNull();
+    const sessionId = sessionIdMatch![1];
+
+    const { stdout: listOut } = await runDevMind('handoff --list');
+    expect(listOut).toContain('Available Sessions:');
+    expect(listOut).toContain(sessionId);
+    expect(listOut).toContain('in_progress');
+  });
 });

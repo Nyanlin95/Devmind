@@ -16,6 +16,7 @@ jest.unstable_mockModule('../../src/core/index.js', () => ({
   logger,
   readFileSafe,
   handleError: jest.fn(),
+  failCommand: jest.fn(),
 }));
 
 jest.unstable_mockModule('../../src/database/extractors/index.js', () => ({

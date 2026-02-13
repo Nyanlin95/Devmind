@@ -46,7 +46,7 @@ export function handleError(error: Error, verbose: boolean = false): never {
     console.error(error.stack);
   }
 
-  process.exit(1);
+  throw error;
 }
 
 export function wrapAsync<T extends any[], R>(
@@ -57,6 +57,64 @@ export function wrapAsync<T extends any[], R>(
       return await fn(...args);
     } catch (error) {
       handleError(error as Error);
+    }
+  };
+}
+
+export function failCommand(message: string, error?: unknown, exitCode: number = 1): void {
+  logger.error(message);
+  if (error) {
+    if (error instanceof Error) {
+      logger.error(error.message);
+    } else {
+      logger.error(String(error));
+    }
+  }
+  process.exitCode = exitCode;
+}
+
+function extractJsonMode(args: unknown[]): boolean {
+  for (let i = args.length - 1; i >= 0; i -= 1) {
+    const candidate = args[i];
+    if (!candidate || typeof candidate !== 'object') continue;
+    const maybe = candidate as { json?: unknown };
+    if (typeof maybe.json === 'boolean') {
+      return maybe.json === true;
+    }
+  }
+  return false;
+}
+
+function emitCliJsonError(command: string, error: unknown): void {
+  const message = error instanceof Error ? error.message : String(error);
+  console.log(
+    JSON.stringify(
+      {
+        success: false,
+        error: message,
+        command,
+        timestamp: new Date().toISOString(),
+      },
+      null,
+      2,
+    ),
+  );
+}
+
+export function withCliErrorHandling<TArgs extends unknown[]>(
+  command: string,
+  handler: (...args: TArgs) => Promise<void> | void,
+): (...args: TArgs) => Promise<void> {
+  return async (...args: TArgs): Promise<void> => {
+    try {
+      await handler(...args);
+    } catch (error) {
+      if (extractJsonMode(args)) {
+        emitCliJsonError(command, error);
+        process.exitCode = 1;
+        return;
+      }
+      failCommand(`Command "${command}" failed`, error);
     }
   };
 }

@@ -4,7 +4,8 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { parseFile, CodeExport } from '../parsers/typescript.js';
+import * as fsPromises from 'fs/promises';
+import { parseSourceFile, CodeExport } from '../parsers/typescript.js';
 import { logger } from '../../core/index.js';
 
 const IGNORED_DIRS = [
@@ -24,6 +25,21 @@ const IGNORED_FILES = [
   'pnpm-lock.yaml',
   'yarn.lock',
 ];
+
+const JS_TS_LANGUAGES = new Set([
+  'TypeScript',
+  'TypeScript React',
+  'JavaScript',
+  'JavaScript React',
+]);
+const MAX_PARSE_BYTES = 256 * 1024;
+
+function shouldSkipAstParse(fileName: string, size: number): boolean {
+  const lower = fileName.toLowerCase();
+  if (size > MAX_PARSE_BYTES) return true;
+  if (lower.includes('.min.')) return true;
+  return false;
+}
 
 export interface FileNode {
   name: string;
@@ -71,6 +87,73 @@ export function getFileSize(filePath: string): number {
   }
 }
 
+async function getFileSizeAsync(filePath: string): Promise<number> {
+  try {
+    const stats = await fsPromises.stat(filePath);
+    return stats.size;
+  } catch {
+    return 0;
+  }
+}
+
+function createLimiter(maxConcurrency: number) {
+  let active = 0;
+  const queue: Array<() => void> = [];
+
+  const runNext = () => {
+    if (active >= maxConcurrency) return;
+    const next = queue.shift();
+    if (!next) return;
+    next();
+  };
+
+  return async function limit<T>(task: () => Promise<T>): Promise<T> {
+    if (active >= maxConcurrency) {
+      await new Promise<void>((resolve) => queue.push(resolve));
+    }
+
+    active += 1;
+    try {
+      return await task();
+    } finally {
+      active -= 1;
+      runNext();
+    }
+  };
+}
+
+async function scanFileAsync(fullPath: string, entryName: string): Promise<FileNode | null> {
+  if (IGNORED_FILES.includes(entryName)) return null;
+
+  const lang = detectLanguage(entryName);
+  let exports: (CodeExport | string)[] = [];
+  let size = await getFileSizeAsync(fullPath);
+
+  if (JS_TS_LANGUAGES.has(lang) && !shouldSkipAstParse(entryName, size)) {
+    try {
+      const content = await fsPromises.readFile(fullPath, 'utf-8');
+      exports = parseSourceFile(fullPath, content);
+    } catch (e: any) {
+      logger.debug(`Failed to parse ${entryName}: ${e.message}`);
+    }
+  } else if (lang !== 'Unknown' && lang !== 'JSON' && lang !== 'YAML' && lang !== 'Markdown') {
+    try {
+      const content = await fsPromises.readFile(fullPath, 'utf-8');
+      exports = extractExports(content);
+    } catch {
+      // Skip unreadable files
+    }
+  }
+
+  return {
+    name: entryName,
+    type: 'file',
+    language: lang,
+    size,
+    exports,
+  };
+}
+
 export function scanDirectory(dir: string, depth: number = 0, maxDepth: number = 4): FileNode {
   if (depth > maxDepth) {
     return { name: path.basename(dir), type: 'directory', children: [] };
@@ -93,11 +176,13 @@ export function scanDirectory(dir: string, depth: number = 0, maxDepth: number =
 
         const lang = detectLanguage(entry.name);
         let exports: (CodeExport | string)[] = [];
+        const size = getFileSize(fullPath);
 
         // Use AST parser for JS/TS
-        if (['TypeScript', 'TypeScript React', 'JavaScript', 'JavaScript React'].includes(lang)) {
+        if (JS_TS_LANGUAGES.has(lang) && !shouldSkipAstParse(entry.name, size)) {
           try {
-            exports = parseFile(fullPath);
+            const content = fs.readFileSync(fullPath, 'utf-8');
+            exports = parseSourceFile(fullPath, content);
           } catch (e: any) {
             logger.debug(`Failed to parse ${entry.name}: ${e.message}`);
           }
@@ -119,7 +204,7 @@ export function scanDirectory(dir: string, depth: number = 0, maxDepth: number =
           name: entry.name,
           type: 'file',
           language: lang,
-          size: getFileSize(fullPath),
+          size,
           exports: exports,
         });
       }
@@ -134,6 +219,58 @@ export function scanDirectory(dir: string, depth: number = 0, maxDepth: number =
     path: path.relative(process.cwd(), dir).replace(/\\/g, '/'),
     children: items,
   };
+}
+
+export async function scanDirectoryAsync(
+  dir: string,
+  depth: number = 0,
+  maxDepth: number = 4,
+  maxConcurrency: number = 24,
+): Promise<FileNode> {
+  const limit = createLimiter(maxConcurrency);
+
+  async function walk(currentDir: string, currentDepth: number): Promise<FileNode> {
+    if (currentDepth > maxDepth) {
+      return { name: path.basename(currentDir), type: 'directory', children: [] };
+    }
+
+    let entries: fs.Dirent[] = [];
+    try {
+      entries = await fsPromises.readdir(currentDir, { withFileTypes: true });
+    } catch (e: any) {
+      logger.error(`Error scanning ${currentDir}: ${e.message}`);
+      return {
+        name: path.basename(currentDir),
+        type: 'directory',
+        path: path.relative(process.cwd(), currentDir).replace(/\\/g, '/'),
+        children: [],
+      };
+    }
+
+    const itemPromises = entries
+      .filter((entry) => !IGNORED_DIRS.includes(entry.name))
+      .map((entry) =>
+        limit(async () => {
+          const fullPath = path.join(currentDir, entry.name);
+          if (entry.isDirectory()) {
+            return walk(fullPath, currentDepth + 1);
+          }
+          if (!entry.isFile()) return null;
+          return scanFileAsync(fullPath, entry.name);
+        }),
+      );
+
+    const items = (await Promise.all(itemPromises)).filter((item): item is FileNode => !!item);
+
+    return {
+      name: path.basename(currentDir),
+      type: 'directory',
+      path: path.relative(process.cwd(), currentDir).replace(/\\/g, '/'),
+      children: items,
+    };
+  }
+
+  return walk(dir, depth);
 }
 
 // Simple regex-based export extractor for non-JS/TS files or fallback
