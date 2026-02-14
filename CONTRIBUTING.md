@@ -16,7 +16,7 @@ DevMind is a single package with a unified codebase in `src/`:
 ## Prerequisites
 
 - Node.js >= 18
-- pnpm >= 8 (or npm/yarn)
+- npm >= 9
 
 ## Getting Started
 
@@ -28,12 +28,6 @@ DevMind is a single package with a unified codebase in `src/`:
    ```
 
 2. **Install dependencies:**
-
-   ```bash
-   pnpm install
-   ```
-
-   _or_
 
    ```bash
    npm install
