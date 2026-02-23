@@ -11,6 +11,7 @@ import {
   writeCacheJson,
   getSourceFilesWithCache,
   parseLearningEntries,
+  getSourceIgnoreGlobs,
 } from '../core/index.js';
 import { loadAuditSources, buildProjectFingerprint, AnalyzeCacheEntry } from './audit-source.js';
 import {
@@ -137,12 +138,15 @@ export async function audit(options: AuditOptions): Promise<void> {
     return;
   }
 
+  const ignore = await profiler.section('audit.loadIgnore', async () =>
+    getSourceIgnoreGlobs(rootPath),
+  );
   const sourceList = await profiler.section('audit.listSources', async () =>
     getSourceFilesWithCache({
       outputDir,
       rootPath,
-      includeGlob: '**/*.{ts,tsx,js,jsx,py,go,java,rb,php,rs,css,scss}',
-      ignore: ['node_modules/**', '.git/**', '.devmind/**', 'dist/**', 'build/**'],
+      includeGlob: '**/*.{ts,tsx,js,jsx,mjs,cjs,py,go,java,rb,php,rs,kt,kts,dart,sh,bash,zsh,sql,swift,css,scss}',
+      ignore,
     }),
   );
   const files = sourceList.files;

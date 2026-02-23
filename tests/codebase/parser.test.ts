@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { parseFile } from '../../src/codebase/parsers/typescript.js';
+import { parseFile, parseSourceFile } from '../../src/codebase/parsers/typescript.js';
 
 describe('TypeScript Parser', () => {
   let tempDir: string;
@@ -111,5 +111,19 @@ describe('TypeScript Parser', () => {
 
     expect(names).not.toContain('internalOnly');
     expect(names).not.toContain('Hidden');
+  });
+
+  it('should parse JavaScript exports with shared parser engine', () => {
+    const jsContent = `
+      export function run(input) { return input; }
+      export const VERSION = '1.0.0';
+      export default run;
+    `;
+    const exports = parseSourceFile('sample.js', jsContent);
+    const names = exports.map((e) => e.name);
+
+    expect(names).toContain('run');
+    expect(names).toContain('VERSION');
+    expect(names).toContain('default');
   });
 });

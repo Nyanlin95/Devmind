@@ -20,6 +20,11 @@ interface DesignSystemProfile {
     pattern: string;
     message: string;
   }>;
+  motion?: {
+    reducedMotionRequired?: boolean;
+    maxDurationMs?: number;
+    forbidInfiniteAnimations?: boolean;
+  };
 }
 
 function isJsonFlagEnabled(
@@ -66,6 +71,11 @@ function defaultProfile(): DesignSystemProfile {
         message: 'Avoid raw hex values in UI code; use design-system tokens.',
       },
     ],
+    motion: {
+      reducedMotionRequired: true,
+      maxDurationMs: 900,
+      forbidInfiniteAnimations: true,
+    },
   };
 }
 
@@ -128,4 +138,9 @@ export async function designSystem(options: DesignSystemOptions): Promise<void> 
   logger.info(`Token sources: ${parsed.tokenSources.join(', ') || '(none)'}`);
   logger.info(`Required wrappers: ${parsed.requiredWrappers.join(', ') || '(none)'}`);
   logger.info(`Banned rules: ${parsed.bannedRegexRules.length}`);
+  if (parsed.motion) {
+    logger.info(
+      `Motion: reducedMotionRequired=${parsed.motion.reducedMotionRequired !== false}, maxDurationMs=${parsed.motion.maxDurationMs ?? 900}, forbidInfiniteAnimations=${parsed.motion.forbidInfiniteAnimations !== false}`,
+    );
+  }
 }

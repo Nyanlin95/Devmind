@@ -8,7 +8,7 @@ import * as fsPromises from 'fs/promises';
 import { parseSourceFile, CodeExport } from '../parsers/typescript.js';
 import { logger } from '../../core/index.js';
 
-const IGNORED_DIRS = [
+const DEFAULT_IGNORED_DIRS = [
   'node_modules',
   '.git',
   'dist',
@@ -58,12 +58,26 @@ export function detectLanguage(file: string): string {
     '.tsx': 'TypeScript React',
     '.js': 'JavaScript',
     '.jsx': 'JavaScript React',
+    '.mjs': 'JavaScript',
+    '.cjs': 'JavaScript',
     '.py': 'Python',
     '.go': 'Go',
+    '.kt': 'Kotlin',
+    '.kts': 'Kotlin Script',
+    '.dart': 'Dart',
+    '.sh': 'Shell',
+    '.bash': 'Shell',
+    '.zsh': 'Shell',
+    '.sql': 'SQL',
     '.rs': 'Rust',
     '.java': 'Java',
     '.c': 'C',
+    '.h': 'C Header',
     '.cpp': 'C++',
+    '.cxx': 'C++',
+    '.cc': 'C++',
+    '.hpp': 'C++ Header',
+    '.hh': 'C++ Header',
     '.cs': 'C#',
     '.rb': 'Ruby',
     '.php': 'PHP',
@@ -154,7 +168,22 @@ async function scanFileAsync(fullPath: string, entryName: string): Promise<FileN
   };
 }
 
-export function scanDirectory(dir: string, depth: number = 0, maxDepth: number = 4): FileNode {
+export function scanDirectory(
+  dir: string,
+  depth: number = 0,
+  maxDepth: number = 4,
+  ignoredDirsInput?: Set<string>,
+): FileNode {
+  const ignoredDirs = ignoredDirsInput || new Set(DEFAULT_IGNORED_DIRS);
+  return scanDirectoryWithIgnores(dir, depth, maxDepth, ignoredDirs);
+}
+
+function scanDirectoryWithIgnores(
+  dir: string,
+  depth: number,
+  maxDepth: number,
+  ignoredDirs: Set<string>,
+): FileNode {
   if (depth > maxDepth) {
     return { name: path.basename(dir), type: 'directory', children: [] };
   }
@@ -165,12 +194,12 @@ export function scanDirectory(dir: string, depth: number = 0, maxDepth: number =
     const entries = fs.readdirSync(dir, { withFileTypes: true });
 
     for (const entry of entries) {
-      if (IGNORED_DIRS.includes(entry.name)) continue;
+      if (ignoredDirs.has(entry.name)) continue;
 
       const fullPath = path.join(dir, entry.name);
 
       if (entry.isDirectory()) {
-        items.push(scanDirectory(fullPath, depth + 1, maxDepth));
+        items.push(scanDirectoryWithIgnores(fullPath, depth + 1, maxDepth, ignoredDirs));
       } else if (entry.isFile()) {
         if (IGNORED_FILES.includes(entry.name)) continue;
 
@@ -226,7 +255,9 @@ export async function scanDirectoryAsync(
   depth: number = 0,
   maxDepth: number = 4,
   maxConcurrency: number = 24,
+  ignoredDirsInput?: Set<string>,
 ): Promise<FileNode> {
+  const ignoredDirs = ignoredDirsInput || new Set(DEFAULT_IGNORED_DIRS);
   const limit = createLimiter(maxConcurrency);
 
   async function walk(currentDir: string, currentDepth: number): Promise<FileNode> {
@@ -248,7 +279,7 @@ export async function scanDirectoryAsync(
     }
 
     const itemPromises = entries
-      .filter((entry) => !IGNORED_DIRS.includes(entry.name))
+      .filter((entry) => !ignoredDirs.has(entry.name))
       .map((entry) =>
         limit(async () => {
           const fullPath = path.join(currentDir, entry.name);
@@ -286,6 +317,12 @@ export function extractExports(content: string): string[] {
     // Add patterns for Python, Go, etc. if needed later
     /def\s+(\w+)/g, // Python function
     /class\s+(\w+)/g, // Python/Ruby class
+    /fun\s+(\w+)\s*\(/g, // Kotlin function
+    /(?:class|interface|object)\s+(\w+)/g, // Kotlin type/object
+    /(?:class|enum|mixin|extension)\s+(\w+)/g, // Dart type
+    /function\s+(\w+)\s*\(/g, // Shell/JS function
+    /^(\w+)\s*\(\)\s*\{/gm, // Shell function form
+    /create\s+(?:or\s+replace\s+)?(?:table|view|function)\s+([a-zA-Z0-9_.]+)/gi, // SQL DDL
   ];
 
   for (const line of lines) {

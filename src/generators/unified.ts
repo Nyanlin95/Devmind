@@ -16,6 +16,7 @@ type SectionType =
   | 'design-system'
   | 'memory'
   | 'capabilities'
+  | 'retrieval'
   | 'runbook';
 
 interface UnifiedDocSection {
@@ -58,6 +59,11 @@ interface DesignSystemProfile {
     pattern?: string;
     message?: string;
   }>;
+  motion?: {
+    reducedMotionRequired?: boolean;
+    maxDurationMs?: number;
+    forbidInfiniteAnimations?: boolean;
+  };
 }
 
 function toPosixPath(filePath: string): string {
@@ -120,6 +126,14 @@ function parseSectionsFromAgentsContent(agentsContent: string): ParsedSection[] 
 async function replaceFile(tempPath: string, targetPath: string): Promise<void> {
   await fs.rm(targetPath, { force: true });
   await fs.rename(tempPath, targetPath);
+}
+
+async function ensureFileIfMissing(filePath: string, content: string): Promise<void> {
+  try {
+    await fs.access(filePath);
+  } catch {
+    await writeFileSafe(filePath, content);
+  }
 }
 
 function buildIndexSections(
@@ -217,6 +231,177 @@ export async function generateUnifiedDocs(outputDir: string): Promise<void> {
   const contextDir = path.join(outputDir, 'context');
   const memoryDir = path.join(outputDir, 'memory');
 
+  const routeDefinitions: Record<'auth' | 'db' | 'ui', string> = {
+    auth: '# Auth Summary\n\nDocument authentication and authorization invariants here.\n',
+    db: '# DB Summary\n\nDocument database behavior and schema-sensitive rules here.\n',
+    ui: '# UI Summary\n\nDocument UI state/interaction behavior and constraints here.\n',
+  };
+  for (const [route, summaryTemplate] of Object.entries(routeDefinitions)) {
+    const routeDir = path.join(contextDir, route);
+    await ensureDir(routeDir);
+    await ensureFileIfMissing(path.join(routeDir, 'summary.md'), summaryTemplate);
+    if (route === 'ui') {
+      await ensureFileIfMissing(
+        path.join(routeDir, 'details.md'),
+        '# UI Details\n\nBehavior-level UI context for state, rendering flow, and interaction rules.\n',
+      );
+      await ensureFileIfMissing(
+        path.join(routeDir, 'deep-dive.md'),
+        '# UI Deep Dive\n\nCross-module UI refactor notes, invariants, and migration constraints.\n',
+      );
+    }
+  }
+
+  const contractsDir = path.join(contextDir, 'contracts');
+  await ensureDir(contractsDir);
+  await ensureFileIfMissing(
+    path.join(contractsDir, 'http.md'),
+    [
+      '# HTTP Contract',
+      '',
+      '- Service ports: define canonical listen/exposed/proxy ports.',
+      '- Base paths: define canonical API base paths.',
+      '- Required headers: define auth/header format and ownership.',
+      '- Env names: define canonical env vars for port binding.',
+      '',
+      '## Mapping Table',
+      '| Layer | Setting | Value | Source |',
+      '| --- | --- | --- | --- |',
+      '| app | listen port | TBD | app config |',
+      '| container | exposed port | TBD | container config |',
+      '| proxy/gateway | upstream port | TBD | infra config |',
+      '',
+    ].join('\n'),
+  );
+  await ensureFileIfMissing(
+    path.join(contractsDir, 'middleware.md'),
+    [
+      '# Middleware Contract',
+      '',
+      '- Canonical signature: define one middleware signature and keep all helpers aligned.',
+      '- Error strategy: define throw/return convention.',
+      '- Response ownership: define whether middleware writes response or returns data.',
+      '- Helper wrappers: list approved wrappers only.',
+      '',
+      '## Canonical Signature',
+      '`(ctx, next)` (or project standard) - update all callsites consistently.',
+      '',
+    ].join('\n'),
+  );
+  await ensureFileIfMissing(
+    path.join(contractsDir, 'auth.md'),
+    [
+      '# Auth Contract',
+      '',
+      '- Token types: define access/refresh/session usage.',
+      '- Claim schema: define required claims (`sub`, `aud`, `iss`, `exp`, app claims).',
+      '- Validation rules: define skew, rotation, and revocation behavior.',
+      '- Enforcement points: define where auth is validated (gateway/service/both).',
+      '',
+      '## Claims',
+      '- `sub`: principal id',
+      '- `aud`: audience',
+      '- `iss`: issuer',
+      '- `exp`: expiration',
+      '',
+    ].join('\n'),
+  );
+  await ensureFileIfMissing(
+    path.join(contractsDir, 'ui.md'),
+    [
+      '# UI Contract',
+      '',
+      '- Routing boundaries: define page/route ownership and allowed cross-route coupling.',
+      '- Data-fetch contract: define where loading/mutation happens and fallback behavior.',
+      '- State ownership: define local/global/server state boundaries.',
+      '- UX invariants: loading/empty/error patterns and accessibility requirements.',
+      '- Design system usage: define allowed components, token sources, and wrapper requirements.',
+      '',
+    ].join('\n'),
+  );
+  await ensureFileIfMissing(
+    path.join(contractsDir, 'motion.md'),
+    [
+      '# Motion Contract',
+      '',
+      '- Motion ownership: define where timeline/state-machine logic lives.',
+      '- Accessibility: enforce `prefers-reduced-motion` strategy for animated interactions.',
+      '- Performance: avoid layout-thrashing animation properties; prefer transform/opacity.',
+      '- Invariants: define max duration, easing conventions, and infinite-loop restrictions.',
+      '- Library boundaries: define allowed usage of Framer Motion/GSAP/Lottie and fallback behavior.',
+      '',
+    ].join('\n'),
+  );
+  await ensureFileIfMissing(
+    path.join(contractsDir, 'go.md'),
+    [
+      '# Go/Golang Contract',
+      '',
+      '- Framework/runtime: document chosen HTTP/router stack (gin/fiber/echo/net-http).',
+      '- Context propagation: define request context/timeouts/cancellation policy.',
+      '- Middleware shape: define canonical middleware signature and ordering.',
+      '- Error contract: define error wrapping/logging/status mapping.',
+      '',
+    ].join('\n'),
+  );
+  await ensureFileIfMissing(
+    path.join(contractsDir, 'python.md'),
+    [
+      '# Python Contract',
+      '',
+      '- Framework/runtime: document FastAPI/Django/Flask conventions used.',
+      '- Validation contract: document schema/typing layer (pydantic/dataclasses).',
+      '- Middleware/dependency flow: define request lifecycle and auth hooks.',
+      '- Error contract: define exception-to-response mapping.',
+      '',
+    ].join('\n'),
+  );
+  await ensureFileIfMissing(
+    path.join(contractsDir, 'next.md'),
+    [
+      '# Next.js Contract',
+      '',
+      '- Router mode: App Router vs Pages Router and allowed usage boundaries.',
+      '- Server/client split: define server component, client component, and route handler rules.',
+      '- Auth/session handoff: define where token/session checks occur.',
+      '- API contract: define route handler conventions and edge/runtime constraints.',
+      '',
+    ].join('\n'),
+  );
+  await ensureFileIfMissing(
+    path.join(contractsDir, 'php.md'),
+    [
+      '# PHP Contract',
+      '',
+      '- Runtime: define php-fpm/web server assumptions and entrypoint flow.',
+      '- Dependency contract: define composer package and autoload conventions.',
+      '- Request lifecycle: define middleware/controller boundaries.',
+      '- Error contract: define exception handling and response mapping.',
+      '',
+    ].join('\n'),
+  );
+  await ensureFileIfMissing(
+    path.join(contractsDir, 'laravel.md'),
+    [
+      '# Laravel Contract',
+      '',
+      '- Routing contract: define web/api route boundaries and middleware groups.',
+      '- Auth contract: define Sanctum/Passport/session model and guards.',
+      '- Data contract: define Eloquent model, policy, and resource conventions.',
+      '- Queue/event contract: define async boundaries and retry semantics.',
+      '',
+    ].join('\n'),
+  );
+  await ensureFileIfMissing(
+    path.join(contextDir, 'refactor-ledger.md'),
+    [
+      '# Refactor Ledger',
+      '',
+      '> Persistent refactor state: goals, constraints, hypotheses, decisions, and resolutions.',
+      '',
+    ].join('\n'),
+  );
+
   // Read available contexts
   const schemaContext = await readFileSafe(
     path.join(outputDir, 'database', 'schema-overview.md'),
@@ -274,7 +459,7 @@ export async function generateUnifiedDocs(outputDir: string): Promise<void> {
     <description>Persist session journal/context and auto-apply extracted learnings.</description>
   </tool>
   <tool name="devmind-retrieve">
-    <description>Retrieve focused context using index metadata filters and AGENTS section chunks.</description>
+    <description>Retrieve focused context using index metadata filters, routed summaries, and escalation levels.</description>
   </tool>
   <tool name="devmind-design-system">
     <description>Initialize or inspect design-system.json used for UI alignment auditing and agent guidance.</description>
@@ -307,6 +492,7 @@ Design system profile: \`${designSystemProfile.name || 'unnamed'}\` (v${designSy
           .map((rule) => `\`${rule.id || 'rule'}\` (${rule.message || 'no message'})`)
           .join('; ') || '(none configured)'
       }
+- Motion config: reducedMotionRequired=\`${designSystemProfile.motion?.reducedMotionRequired !== false}\`, maxDurationMs=\`${designSystemProfile.motion?.maxDurationMs || 900}\`, forbidInfiniteAnimations=\`${designSystemProfile.motion?.forbidInfiniteAnimations !== false}\`
 `.trim()
     : 'No design-system profile found. Run `devmind design-system --init` and customize `.devmind/design-system.json`.';
 
@@ -321,9 +507,46 @@ Design system profile: \`${designSystemProfile.name || 'unnamed'}\` (v${designSy
 
 ### Working Rules
 - **Context:** Read this file first, then linked files from \`index.json\`.
+- **Retrieve:** Use routing + escalation contract below before loading deeper context files.
 - **Style:** Follow patterns in \`architecture.md\` and module docs.
 - **Database:** Run \`devmind analyze\` or \`devmind validate\` before risky schema changes.
 - **Memory:** Use \`LEARN.md\` to keep decisions consistent across sessions.
+
+### CLI Flow Playbook
+- Session start: \`devmind status --json\`, run \`recommendedCommand\` when stale, re-check status.
+- Build codebase context: \`devmind scan -p . -o .devmind\`.
+- Build database context: \`devmind generate --db -o .devmind\`.
+- Unified generation: \`devmind generate --all -p . -o .devmind\`.
+- Deterministic retrieval: \`devmind retrieve -q "<intent>" [--route auth|db|ui] [--level 1|2|3] [--state] --json\`.
+- Analysis loop: \`devmind analyze\`, \`devmind audit\`, \`devmind extract --apply\`.
+- Refactor/rewrite loop: record \`--goal\`, \`--non-negotiable\`, \`--open-question\`, \`--failure\`, \`--resolution\` via \`devmind autosave\`.
+- Task end: \`devmind autosave --source task-end\`.
+`.trim();
+
+  const retrievalContractContent = `
+Purpose:
+This file defines HOW to retrieve context, not the context itself.
+
+Routing rules:
+- If query/error contains ECONNREFUSED/port/listen/upstream/proxy -> load \`/context/contracts/http.md\` first.
+- If query/error contains middleware/helper/signature/next/ctx/req/res -> load \`/context/contracts/middleware.md\` first.
+- If query/error contains auth/token/jwt/session/claims -> load \`/context/contracts/auth.md\` first.
+- If query/error contains ui/ux/frontend/component/layout/hydration/ssr/csr/design-token/a11y -> load \`/context/contracts/ui.md\` first.
+- If query/error contains animation/motion/framer/gsap/lottie/keyframes/reduced-motion -> load \`/context/contracts/motion.md\` first.
+- If query/error contains go/golang/goroutine/gin/fiber/echo -> load \`/context/contracts/go.md\` first.
+- If query/error contains python/fastapi/django/flask/pydantic -> load \`/context/contracts/python.md\` first.
+- If query/error contains next/nextjs/next.js/app-router/server-component -> load \`/context/contracts/next.md\` first.
+- If query/error contains php/composer/php-fpm -> load \`/context/contracts/php.md\` first.
+- If query/error contains laravel/eloquent/artisan/sanctum/passport -> load \`/context/contracts/laravel.md\` first.
+- Then load routed summaries:
+  - auth -> /context/auth/summary.md
+  - db -> /context/db/summary.md
+  - ui -> /context/ui/summary.md
+
+Escalation:
+- Load level-2 only if modifying behavior or invariants.
+- Load level-3 only for cross-module refactor, migrations, or incident/debug.
+- For refactor/rewrite/migration tasks, load \`/context/refactor-ledger.md\` and recent decisions/hypotheses.
 `.trim();
 
   const sections: UnifiedDocSection[] = [
@@ -393,6 +616,15 @@ Design system profile: \`${designSystemProfile.name || 'unnamed'}\` (v${designSy
       content: capabilityContent,
     },
     {
+      id: 'context.retrieval',
+      title: 'Context Retrieval Contract',
+      type: 'retrieval',
+      tags: ['context', 'retrieval', 'routing', 'escalation'],
+      priority: 'high',
+      source: 'AGENTS.md',
+      content: retrievalContractContent,
+    },
+    {
       id: 'agent.runbook',
       title: 'Instructions',
       type: 'runbook',
@@ -427,6 +659,7 @@ ${sections.map((section) => renderSection(section)).join('\n\n')}
       codebase: 'codebase/codebase-overview.md',
       architecture: 'codebase/architecture.md',
       designSystem: 'design-system.json',
+      retrieval: 'context',
       learnings: 'memory/LEARN.md',
     },
     metadata: {
@@ -542,7 +775,7 @@ ${sections.map((section) => renderSection(section)).join('\n\n')}
     {
       name: 'devmind_autosave',
       description:
-        'Persists crash-safe session journal/context and auto-applies extracted learnings.',
+        'Persists crash-safe session journal/context, decision+hypothesis state, refactor ledger entries, and auto-applies extracted learnings.',
       parameters: {
         type: 'object',
         properties: {
@@ -562,13 +795,45 @@ ${sections.map((section) => renderSection(section)).join('\n\n')}
             type: 'string',
             description: 'Optional note attached to journal/context state',
           },
+          decision: {
+            type: 'string',
+            description: 'Optional decision text to append into context decision log',
+          },
+          hypothesis: {
+            type: 'string',
+            description: 'Optional hypothesis text to append into context hypothesis log',
+          },
+          hypothesis_status: {
+            type: 'string',
+            description: 'Optional hypothesis status (open, ruled-out, confirmed)',
+          },
+          goal: {
+            type: 'string',
+            description: 'Optional refactor/rewrite goal to append into refactor ledger',
+          },
+          non_negotiable: {
+            type: 'string',
+            description: 'Optional non-negotiable invariant to append into refactor ledger',
+          },
+          open_question: {
+            type: 'string',
+            description: 'Optional unresolved question to append into refactor ledger',
+          },
+          failure: {
+            type: 'string',
+            description: 'Optional encountered failure mode to append into refactor ledger',
+          },
+          resolution: {
+            type: 'string',
+            description: 'Optional resolution to append into refactor ledger',
+          },
         },
       },
     },
     {
       name: 'devmind_retrieve',
       description:
-        'Performs two-stage retrieval using index metadata as filter and AGENTS.md sections as content.',
+        'Performs deterministic retrieval using contract docs, routed summaries, AGENTS sections, and escalation levels.',
       parameters: {
         type: 'object',
         properties: {
@@ -587,6 +852,18 @@ ${sections.map((section) => renderSection(section)).join('\n\n')}
           tags: {
             type: 'string',
             description: 'Optional comma-separated tags filter',
+          },
+          route: {
+            type: 'string',
+            description: 'Optional comma-separated routed context targets (auth,db,ui)',
+          },
+          level: {
+            type: 'number',
+            description: 'Optional escalation level override (1,2,3)',
+          },
+          state: {
+            type: 'boolean',
+            description: 'Include decision/hypothesis state logs when available',
           },
           limit: {
             type: 'number',

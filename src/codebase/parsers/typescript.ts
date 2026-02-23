@@ -13,6 +13,19 @@ export interface CodeExport {
   methods?: string[];
 }
 
+interface ParserContext {
+  sourceFile: ts.SourceFile;
+}
+
+interface ParserRule {
+  id: string;
+  apply: (node: ts.Node, context: ParserContext) => CodeExport | CodeExport[] | null;
+}
+
+type SourceParser = (filePath: string, fileContent: string) => CodeExport[];
+
+const parserRegistry = new Map<string, SourceParser>();
+
 /**
  * Parse a TypeScript/JavaScript file and extract exported symbols with signatures
  */
@@ -22,24 +35,142 @@ export function parseFile(filePath: string): CodeExport[] {
 }
 
 export function parseSourceFile(filePath: string, fileContent: string): CodeExport[] {
-  const sourceFile = ts.createSourceFile(filePath, fileContent, ts.ScriptTarget.Latest, true);
+  const extension = getNormalizedExtension(filePath);
+  const parser = parserRegistry.get(extension) || parseTsJsSource;
+  return parser(filePath, fileContent);
+}
 
+function registerParser(extensions: string[], parser: SourceParser): void {
+  for (const extension of extensions) {
+    parserRegistry.set(extension, parser);
+  }
+}
+
+function getNormalizedExtension(filePath: string): string {
+  const lower = filePath.toLowerCase();
+  if (lower.endsWith('.d.ts')) return '.d.ts';
+  const dotIndex = lower.lastIndexOf('.');
+  return dotIndex >= 0 ? lower.slice(dotIndex) : '';
+}
+
+const TS_JS_EXPORT_RULES: ParserRule[] = [
+  {
+    id: 'function',
+    apply: (node, context) => {
+      if (!ts.isFunctionDeclaration(node)) return null;
+      return {
+        type: 'function',
+        name: node.name?.text || 'default',
+        signature: getFunctionSignature(node, context.sourceFile),
+        doc: getJSDoc(node),
+      };
+    },
+  },
+  {
+    id: 'class',
+    apply: (node, context) => {
+      if (!ts.isClassDeclaration(node)) return null;
+      return {
+        type: 'class',
+        name: node.name?.text || 'default',
+        methods: getClassMembers(node, context.sourceFile),
+        doc: getJSDoc(node),
+      };
+    },
+  },
+  {
+    id: 'interface',
+    apply: (node) => {
+      if (!ts.isInterfaceDeclaration(node)) return null;
+      return {
+        type: 'interface',
+        name: node.name.text,
+        signature: `interface ${node.name.text}`,
+        doc: getJSDoc(node),
+      };
+    },
+  },
+  {
+    id: 'type',
+    apply: (node) => {
+      if (!ts.isTypeAliasDeclaration(node)) return null;
+      return {
+        type: 'type',
+        name: node.name.text,
+        signature: `type ${node.name.text}`,
+        doc: getJSDoc(node),
+      };
+    },
+  },
+  {
+    id: 'variable',
+    apply: (node, context) => {
+      if (!ts.isVariableStatement(node)) return null;
+      const declarations: CodeExport[] = [];
+      node.declarationList.declarations.forEach((decl) => {
+        if (ts.isIdentifier(decl.name)) {
+          declarations.push({
+            type: 'variable',
+            name: decl.name.getText(context.sourceFile),
+            signature: `const ${decl.name.getText(context.sourceFile)}`,
+            doc: getJSDoc(node),
+          });
+        }
+      });
+      return declarations;
+    },
+  },
+  {
+    id: 'export-assignment',
+    apply: (node, context) => {
+      if (!ts.isExportAssignment(node)) return null;
+      return {
+        type: 'variable',
+        name: 'default',
+        signature: node.getText(context.sourceFile),
+        doc: getJSDoc(node),
+      };
+    },
+  },
+];
+
+function parseTsJsSource(filePath: string, fileContent: string): CodeExport[] {
+  const scriptKind = getScriptKindFromFilePath(filePath);
+  const sourceFile = ts.createSourceFile(
+    filePath,
+    fileContent,
+    ts.ScriptTarget.Latest,
+    true,
+    scriptKind,
+  );
+  const context: ParserContext = { sourceFile };
   const exports: CodeExport[] = [];
 
   ts.forEachChild(sourceFile, (node) => {
-    if (isExported(node)) {
-      const details = extractDetails(node, sourceFile);
-      if (details) {
-        if (Array.isArray(details)) {
-          exports.push(...details);
-        } else {
-          exports.push(details);
-        }
+    if (!isExported(node)) return;
+    for (const rule of TS_JS_EXPORT_RULES) {
+      const details = rule.apply(node, context);
+      if (!details) continue;
+      if (Array.isArray(details)) {
+        exports.push(...details);
+      } else {
+        exports.push(details);
       }
+      break;
     }
   });
 
   return exports;
+}
+
+function getScriptKindFromFilePath(filePath: string): ts.ScriptKind {
+  const lower = filePath.toLowerCase();
+  if (lower.endsWith('.tsx')) return ts.ScriptKind.TSX;
+  if (lower.endsWith('.jsx')) return ts.ScriptKind.JSX;
+  if (lower.endsWith('.js') || lower.endsWith('.mjs') || lower.endsWith('.cjs')) {
+    return ts.ScriptKind.JS;
+  }
+  return ts.ScriptKind.TS;
 }
 
 /**
@@ -60,88 +191,6 @@ function isExported(node: ts.Node): boolean {
 
 /**
  * Extract details from an exported node
- */
-function extractDetails(
-  node: ts.Node,
-  sourceFile: ts.SourceFile,
-): CodeExport | CodeExport[] | null {
-  // printer is not strictly needed if we just use getText() but keeping for compatibility with original logic if strictly needed
-  // Original logic used printer for some things but mostly getText.
-
-  switch (node.kind) {
-    case ts.SyntaxKind.FunctionDeclaration: {
-      const funcNode = node as ts.FunctionDeclaration;
-      return {
-        type: 'function',
-        name: funcNode.name?.text || 'default',
-        signature: getFunctionSignature(funcNode, sourceFile),
-        doc: getJSDoc(funcNode),
-      };
-    }
-
-    case ts.SyntaxKind.ClassDeclaration: {
-      const classNode = node as ts.ClassDeclaration;
-      return {
-        type: 'class',
-        name: classNode.name?.text || 'default',
-        methods: getClassMembers(classNode, sourceFile),
-        doc: getJSDoc(classNode),
-      };
-    }
-
-    case ts.SyntaxKind.InterfaceDeclaration: {
-      const interfaceNode = node as ts.InterfaceDeclaration;
-      return {
-        type: 'interface',
-        name: interfaceNode.name.text,
-        signature: `interface ${interfaceNode.name.text}`,
-        doc: getJSDoc(interfaceNode),
-      };
-    }
-
-    case ts.SyntaxKind.TypeAliasDeclaration: {
-      const typeNode = node as ts.TypeAliasDeclaration;
-      return {
-        type: 'type',
-        name: typeNode.name.text,
-        signature: `type ${typeNode.name.text}`,
-        doc: getJSDoc(typeNode),
-      };
-    }
-
-    case ts.SyntaxKind.VariableStatement: {
-      const varNode = node as ts.VariableStatement;
-      const declarations: CodeExport[] = [];
-      varNode.declarationList.declarations.forEach((decl) => {
-        if (ts.isIdentifier(decl.name)) {
-          declarations.push({
-            type: 'variable',
-            name: decl.name.getText(sourceFile),
-            signature: `const ${decl.name.getText(sourceFile)}`,
-            doc: getJSDoc(varNode), // JSDoc is on the statement, not declaration usually
-          });
-        }
-      });
-      return declarations;
-    }
-
-    case ts.SyntaxKind.ExportAssignment: {
-      const exportNode = node as ts.ExportAssignment;
-      return {
-        type: 'variable',
-        name: 'default',
-        signature: exportNode.getText(sourceFile),
-        doc: getJSDoc(exportNode),
-      };
-    }
-
-    default:
-      return null;
-  }
-}
-
-/**
- * Get clean function signature
  */
 function getFunctionSignature(node: ts.FunctionDeclaration, sourceFile: ts.SourceFile): string {
   const params = node.parameters.map((p) => p.getText(sourceFile)).join(', ');
@@ -194,3 +243,5 @@ function getJSDoc(node: ts.Node): string {
   }
   return '';
 }
+
+registerParser(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.d.ts'], parseTsJsSource);

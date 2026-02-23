@@ -1,6 +1,6 @@
 {
   "name": "devmind",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "AI Memory Layer for development - Complete project context (codebase + database + memory)",
   "type": "module",
   "files": [
@@ -12,7 +12,7 @@
     "access": "public"
   },
   "bin": {
-    "devmind": "./dist/cli.js"
+    "devmind": "dist/cli.js"
   },
   "scripts": {
     "build": "tsc",
@@ -46,7 +46,7 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Nyanlin95/devmind"
+    "url": "git+https://github.com/Nyanlin95/devmind.git"
   },
   "engines": {
     "node": ">=18.0.0",

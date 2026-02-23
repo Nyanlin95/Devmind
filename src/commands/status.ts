@@ -1,7 +1,13 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import * as fsPromises from 'fs/promises';
-import { logger, readFileSafe, createProfiler, getSourceFilesWithCache } from '../core/index.js';
+import {
+  logger,
+  readFileSafe,
+  createProfiler,
+  getSourceFilesWithCache,
+  getSourceIgnoreGlobs,
+} from '../core/index.js';
 
 interface StatusOptions {
   output?: string;
@@ -43,11 +49,12 @@ async function getSourceLastModifiedMs(
   rootPath: string,
   newerThanMs?: number,
 ): Promise<{ latest: number | null; sourceListCacheHit: boolean }> {
+  const ignore = await getSourceIgnoreGlobs(rootPath);
   const sourceList = await getSourceFilesWithCache({
     outputDir,
     rootPath,
-    includeGlob: '**/*.{ts,tsx,js,jsx,py,go,java,rb,php,rs}',
-    ignore: ['node_modules/**', '.git/**', '.devmind/**', 'dist/**', 'build/**'],
+    includeGlob: '**/*.{ts,tsx,js,jsx,mjs,cjs,py,go,java,rb,php,rs,kt,kts,dart,sh,bash,zsh,sql,swift}',
+    ignore,
   });
   const files = sourceList.files;
 

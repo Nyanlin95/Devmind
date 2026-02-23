@@ -1,4 +1,5 @@
 import * as path from 'path';
+import * as fs from 'fs';
 import { logger, ensureDir, writeJSON, createProfiler, failCommand } from '../core/index.js';
 import { generate as generateDatabase, MemoryInfrastructure } from '../database/index.js';
 import {
@@ -80,14 +81,33 @@ export async function runGenerateCommand(options: Record<string, unknown>): Prom
     const runAll = mergedOptions.all === true;
     const runCode = mergedOptions.code === true || runAll;
     const runDb = mergedOptions.db === true || runAll || (!runCode && mergedOptions.db !== true);
+    const hasDbSignal =
+      !!connectionString ||
+      typeof mergedOptions.sqlite === 'string' ||
+      typeof mergedOptions.prisma === 'string' ||
+      mergedOptions.prisma === true ||
+      typeof mergedOptions.drizzle === 'string' ||
+      mergedOptions.drizzle === true ||
+      typeof mergedOptions.mongodb === 'string' ||
+      typeof mergedOptions.firebaseProject === 'string' ||
+      mergedOptions.mysql === true ||
+      typeof mergedOptions.orm === 'string' ||
+      !!process.env.GOOGLE_APPLICATION_CREDENTIALS ||
+      fs.existsSync(path.resolve('prisma', 'schema.prisma')) ||
+      fs.existsSync(path.resolve('drizzle.config.ts')) ||
+      fs.existsSync(path.resolve('src', 'db', 'schema.ts'));
 
     if (runDb) {
-      logger.info('Starting Database Generation...');
-      const dbOutputDir = path.join(outputDir, 'database');
-      await profiler.section('db.ensureDir', async () => ensureDir(dbOutputDir));
-      await profiler.section('db.generate', async () =>
-        generateDatabase({ ...mergedOptions, output: dbOutputDir }),
-      );
+      if (runAll && !hasDbSignal) {
+        logger.info('Skipping Database Generation (no database config detected).');
+      } else {
+        logger.info('Starting Database Generation...');
+        const dbOutputDir = path.join(outputDir, 'database');
+        await profiler.section('db.ensureDir', async () => ensureDir(dbOutputDir));
+        await profiler.section('db.generate', async () =>
+          generateDatabase({ ...mergedOptions, output: dbOutputDir }),
+        );
+      }
     }
 
     if (runCode) {

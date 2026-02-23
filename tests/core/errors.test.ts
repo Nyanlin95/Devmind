@@ -7,6 +7,11 @@ jest.unstable_mockModule('../../src/core/logger.js', () => ({
   },
 }));
 
+const persistCompactedToolOutput = jest.fn();
+jest.unstable_mockModule('../../src/core/tool-output.js', () => ({
+  persistCompactedToolOutput,
+}));
+
 let handleError: typeof import('../../src/core/errors.js').handleError;
 let wrapAsync: typeof import('../../src/core/errors.js').wrapAsync;
 let DevMindError: typeof import('../../src/core/errors.js').DevMindError;
@@ -89,6 +94,7 @@ describe('Errors', () => {
     expect(payload.success).toBe(false);
     expect(payload.error).toBe('json failure');
     expect(payload.command).toBe('test-cmd');
+    expect(persistCompactedToolOutput).toHaveBeenCalledTimes(1);
   });
 
   it('should log human-readable failure for wrapped CLI command when json option is false', async () => {
@@ -102,5 +108,22 @@ describe('Errors', () => {
     expect(consoleLogSpy).not.toHaveBeenCalled();
     expect(logger.error).toHaveBeenCalledWith('Command "test-cmd" failed');
     expect(logger.error).toHaveBeenCalledWith('human failure');
+    expect(persistCompactedToolOutput).toHaveBeenCalledTimes(1);
+  });
+
+  it('should forward output dir to compacted tool output persistence', async () => {
+    const wrapped = withCliErrorHandling('test-cmd', async (..._args: any[]) => {
+      throw new Error('dir failure');
+    });
+
+    await wrapped('arg', { json: false, output: 'custom-output' } as any);
+
+    expect(persistCompactedToolOutput).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outputDir: 'custom-output',
+        command: 'test-cmd',
+        stage: 'error',
+      }),
+    );
   });
 });

@@ -105,6 +105,9 @@ devmind scan
 devmind status --json
 ```
 
+DevMind reads `.devmindignore` (and `.devmind/ignore` if present) to exclude paths from
+scan/generate/status/analyze/audit/extract context workflows.
+
 ### Focused context
 
 ```bash

@@ -1,0 +1,20 @@
+# DevMind context-generation ignore patterns
+# This file is separate from .gitignore and is used by scan/generate/analyze/audit/extract.
+
+# Dependency/vendor directories
+vendor/
+node_modules/
+
+# Build/cache outputs
+dist/
+build/
+coverage/
+.next/
+
+# Tool/artifact directories
+.git/
+.devmind/
+.ai/
+.npm-cache/
+.pnpm-store/
+
