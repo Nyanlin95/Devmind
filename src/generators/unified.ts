@@ -516,7 +516,7 @@ Design system profile: \`${designSystemProfile.name || 'unnamed'}\` (v${designSy
 - Session start: \`devmind status --json\`, run \`recommendedCommand\` when stale, re-check status.
 - Build codebase context: \`devmind scan -p . -o .devmind\`.
 - Build database context: \`devmind generate --db -o .devmind\`.
-- Unified generation: \`devmind generate --all -p . -o .devmind\`.
+- Unified generation: \`devmind generate --all -p . -o .devmind\` (skips DB generation if no DB config detected).
 - Deterministic retrieval: \`devmind retrieve -q "<intent>" [--route auth|db|ui] [--level 1|2|3] [--state] --json\`.
 - Analysis loop: \`devmind analyze\`, \`devmind audit\`, \`devmind extract --apply\`.
 - Refactor/rewrite loop: record \`--goal\`, \`--non-negotiable\`, \`--open-question\`, \`--failure\`, \`--resolution\` via \`devmind autosave\`.

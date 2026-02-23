@@ -85,8 +85,8 @@ You are ready when `.devmind/AGENTS.md` and `.devmind/index.json` exist.
 - Release by bumping `package.json` version, pushing commit, then pushing a matching tag:
 
 ```bash
-git tag v1.1.1
-git push origin v1.1.1
+git tag v1.1.2
+git push origin v1.1.2
 ```
 
 ## Canonical Flow
@@ -107,6 +107,7 @@ devmind status --json
 
 DevMind reads `.devmindignore` (and `.devmind/ignore` if present) to exclude paths from
 scan/generate/status/analyze/audit/extract context workflows.
+`devmind generate --all` skips DB generation if no database config is detected.
 
 ### Focused context
 
@@ -114,6 +115,7 @@ scan/generate/status/analyze/audit/extract context workflows.
 devmind context --focus src/features
 devmind context --query runbook
 devmind retrieve -q "auth middleware flow" --type architecture --json
+devmind retrieve -q "ui animation jitter" --route ui --level 2 --state --json
 ```
 
 ### Learning loop

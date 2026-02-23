@@ -49,7 +49,7 @@ Use these command flows to keep context fresh and avoid drift:
 - Include long-horizon state: add `--state`
 
 4. Analysis and audits
-- Code↔DB mapping: `devmind analyze -p . -o .devmind`
+- Code<->DB mapping: `devmind analyze -p . -o .devmind`
 - Learning coverage audit: `devmind audit -p . -o .devmind`
 - Learning extraction: `devmind extract -p . -o .devmind [--apply]`
 
@@ -66,3 +66,4 @@ Use these command flows to keep context fresh and avoid drift:
 
 7. Task end
 - `devmind autosave --source task-end`
+
