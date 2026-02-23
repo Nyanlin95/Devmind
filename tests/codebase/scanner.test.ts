@@ -57,6 +57,11 @@ describe('FileSystem Scanner', () => {
     expect(detectLanguage('test.ts')).toBe('TypeScript');
     expect(detectLanguage('index.js')).toBe('JavaScript');
     expect(detectLanguage('script.py')).toBe('Python');
+    expect(detectLanguage('service.kt')).toBe('Kotlin');
+    expect(detectLanguage('tool.kts')).toBe('Kotlin Script');
+    expect(detectLanguage('mobile.dart')).toBe('Dart');
+    expect(detectLanguage('deploy.sh')).toBe('Shell');
+    expect(detectLanguage('schema.sql')).toBe('SQL');
     expect(detectLanguage('unknown.xyz')).toBe('Unknown');
   });
 
@@ -80,9 +85,19 @@ describe('FileSystem Scanner', () => {
     const code = `
         export const FOO = 1;
         export function bar() {}
+        fun doWork() {}
+        class Worker
+        class UserModel {}
+        function deploy() {}
+        create table users (id int);
         `;
     const exports = extractExports(code);
     expect(exports).toContain('FOO');
     expect(exports).toContain('bar');
+    expect(exports).toContain('doWork');
+    expect(exports).toContain('Worker');
+    expect(exports).toContain('UserModel');
+    expect(exports).toContain('deploy');
+    expect(exports).toContain('users');
   });
 });

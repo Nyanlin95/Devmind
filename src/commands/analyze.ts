@@ -9,6 +9,7 @@ import {
   readCacheJson,
   writeCacheJson,
   getSourceFilesWithCache,
+  getSourceIgnoreGlobs,
 } from '../core/index.js';
 import * as fs from 'fs';
 import * as fsPromises from 'fs/promises';
@@ -71,12 +72,15 @@ export async function analyze(options: AnalyzeOptions): Promise<void> {
   // 2. Scan Codebase Files
   // We scan actual files instead of relying on structure.json to ensure fresh content
   logger.info(`Scanning files in: ${rootPath}`);
+  const ignore = await profiler.section('analyze.loadIgnore', async () =>
+    getSourceIgnoreGlobs(rootPath),
+  );
   const sourceList = await profiler.section('analyze.listSources', async () =>
     getSourceFilesWithCache({
       outputDir,
       rootPath,
-      includeGlob: '**/*.{ts,tsx,js,jsx,py,go,java,rb,php,rs}',
-      ignore: ['node_modules/**', '.devmind/**', 'dist/**', 'build/**'],
+      includeGlob: '**/*.{ts,tsx,js,jsx,mjs,cjs,py,go,java,rb,php,rs,kt,kts,dart,sh,bash,zsh,sql,swift}',
+      ignore,
     }),
   );
   const files = sourceList.files;

@@ -4,6 +4,7 @@ import { jest, describe, it, expect, beforeEach } from '@jest/globals';
 jest.unstable_mockModule('../../src/core/fileio.js', () => ({
   fileExists: jest.fn(),
   readJSON: jest.fn(),
+  ensureDir: jest.fn(),
 }));
 
 // Dynamic imports are required after unstable_mockModule

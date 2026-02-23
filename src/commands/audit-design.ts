@@ -13,6 +13,11 @@ interface DesignSystemProfile {
     pattern?: string;
     message?: string;
   }>;
+  motion?: {
+    reducedMotionRequired?: boolean;
+    maxDurationMs?: number;
+    forbidInfiniteAnimations?: boolean;
+  };
 }
 
 export interface DesignAuditFinding {
@@ -32,6 +37,99 @@ function isLikelyUiFile(filePath: string): boolean {
     normalized.includes('/pages/') ||
     normalized.includes('/app/')
   );
+}
+
+function hasMotionUsage(content: string): boolean {
+  return (
+    /framer-motion|motion\./.test(content) ||
+    /gsap\./.test(content) ||
+    /lottie/i.test(content) ||
+    /@keyframes|animation\s*:|transition\s*:/.test(content)
+  );
+}
+
+function hasReducedMotionHandling(content: string): boolean {
+  return (
+    /prefers-reduced-motion/i.test(content) ||
+    /useReducedMotion\s*\(/.test(content) ||
+    /matchMedia\s*\(\s*['"`]\(prefers-reduced-motion: reduce\)/.test(content)
+  );
+}
+
+function collectMotionFindings(
+  uiFileContents: Map<string, string>,
+  profile: DesignSystemProfile,
+): DesignAuditFinding[] {
+  const findings: DesignAuditFinding[] = [];
+  const reducedMotionRequired = profile.motion?.reducedMotionRequired ?? true;
+  const forbidInfinite = profile.motion?.forbidInfiniteAnimations ?? true;
+  const maxDurationMs = profile.motion?.maxDurationMs ?? 900;
+
+  let projectHasReducedMotion = false;
+  for (const content of uiFileContents.values()) {
+    if (hasReducedMotionHandling(content)) {
+      projectHasReducedMotion = true;
+      break;
+    }
+  }
+
+  for (const [file, content] of uiFileContents.entries()) {
+    if (!hasMotionUsage(content)) continue;
+
+    if (/transition\s*:\s*['"]?all\b/i.test(content)) {
+      findings.push({
+        severity: 'warn',
+        rule: 'motion-transition-all',
+        file,
+        message: 'Avoid `transition: all`; animate explicit properties (transform/opacity).',
+      });
+    }
+
+    if (forbidInfinite && /(animation(?:-iteration-count)?\s*:[^;\n]*infinite\b)/i.test(content)) {
+      findings.push({
+        severity: 'warn',
+        rule: 'motion-infinite-animation',
+        file,
+        message: 'Infinite animations detected; ensure opt-out and accessibility-safe behavior.',
+      });
+    }
+
+    const durationMatches = [...content.matchAll(/(?:duration|transition-duration)\s*:\s*(\d+)ms/gi)];
+    for (const match of durationMatches) {
+      const duration = Number(match[1]);
+      if (Number.isFinite(duration) && duration > maxDurationMs) {
+        findings.push({
+          severity: 'warn',
+          rule: 'motion-duration-budget',
+          file,
+          message: `Animation duration ${duration}ms exceeds budget (${maxDurationMs}ms).`,
+        });
+      }
+    }
+
+    if (
+      /(left|top|right|bottom|width|height)\s*:\s*[^;\n]+;/.test(content) &&
+      /transition|animation/.test(content)
+    ) {
+      findings.push({
+        severity: 'warn',
+        rule: 'motion-layout-thrash-risk',
+        file,
+        message: 'Potential layout-thrashing animation properties detected; prefer transform/opacity.',
+      });
+    }
+  }
+
+  if (reducedMotionRequired && !projectHasReducedMotion) {
+    findings.push({
+      severity: 'warn',
+      rule: 'motion-reduced-motion',
+      message:
+        'No reduced-motion handling detected (`prefers-reduced-motion` / `useReducedMotion`).',
+    });
+  }
+
+  return findings;
 }
 
 function collectImports(content: string): string[] {
@@ -157,6 +255,8 @@ export async function collectDesignAuditFindings(
         }
       }
     }
+
+    designFindings.push(...collectMotionFindings(uiFileContents, parsed));
   } catch (error) {
     designFindings.push({
       severity: 'error',

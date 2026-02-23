@@ -128,6 +128,24 @@ describe('DevMind CLI Integration', () => {
     const memoryDir = path.join(TEST_DIR, '.devmind', 'memory');
     expect(fs.existsSync(path.join(memoryDir, 'codebase-evolution.md'))).toBe(true);
   }, 15000);
+
+  test('should skip database generation for --all when no DB config is present', async () => {
+    if (!canSpawnProcesses) return;
+    const projectDir = path.join(TEST_DIR, 'all-no-db-proj');
+    await fs.promises.mkdir(path.join(projectDir, 'src'), { recursive: true });
+    await fs.promises.writeFile(path.join(projectDir, 'src', 'index.ts'), 'export const ok = true;');
+
+    const { stdout } = await execAsync(`node "${CLI_PATH}" generate --all -p .`, {
+      cwd: projectDir,
+    });
+
+    expect(stdout).toContain('Skipping Database Generation');
+    expect(stdout).toContain('Starting Codebase Generation');
+    expect(stdout).toContain('Unified Generation Complete!');
+
+    expect(fs.existsSync(path.join(projectDir, '.devmind', 'index.json'))).toBe(true);
+    expect(fs.existsSync(path.join(projectDir, '.devmind', 'AGENTS.md'))).toBe(true);
+  }, 20000);
   test('should auto-detect database config and generate context', async () => {
     if (!canSpawnProcesses) return;
     // 1. Setup environment with .env and prisma

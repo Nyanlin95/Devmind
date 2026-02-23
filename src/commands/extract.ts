@@ -9,6 +9,7 @@ import {
   createProfiler,
   readCacheJson,
   getSourceFilesWithCache,
+  getSourceIgnoreGlobs,
 } from '../core/index.js';
 
 interface ExtractOptions {
@@ -196,12 +197,15 @@ export async function runExtraction(options: ExtractOptions): Promise<ExtractRes
     }
   }
 
+  const ignore = await profiler.section('extract.loadIgnore', async () =>
+    getSourceIgnoreGlobs(rootPath),
+  );
   const sourceList = await profiler.section('extract.listSources', async () =>
     getSourceFilesWithCache({
       outputDir,
       rootPath,
-      includeGlob: '**/*.{ts,tsx,js,jsx,py,go,java,rb,php,rs}',
-      ignore: ['node_modules/**', '.git/**', '.devmind/**', 'dist/**', 'build/**'],
+      includeGlob: '**/*.{ts,tsx,js,jsx,mjs,cjs,py,go,java,rb,php,rs,kt,kts,dart,sh,bash,zsh,sql,swift}',
+      ignore,
     }),
   );
   const sourceFiles = sourceList.files;

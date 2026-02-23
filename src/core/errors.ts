@@ -3,6 +3,7 @@
  */
 
 import { logger } from './logger.js';
+import { persistCompactedToolOutput } from './tool-output.js';
 
 export class DevMindError extends Error {
   constructor(
@@ -101,6 +102,25 @@ function emitCliJsonError(command: string, error: unknown): void {
   );
 }
 
+function extractOutputDir(args: unknown[]): string {
+  for (let i = args.length - 1; i >= 0; i -= 1) {
+    const candidate = args[i];
+    if (!candidate || typeof candidate !== 'object') continue;
+    const maybe = candidate as { output?: unknown; dir?: unknown };
+    if (typeof maybe.output === 'string' && maybe.output.trim()) return maybe.output;
+    if (typeof maybe.dir === 'string' && maybe.dir.trim()) return maybe.dir;
+  }
+  return '.devmind';
+}
+
+function errorToText(error: unknown): string {
+  if (error instanceof Error) {
+    const stack = error.stack || '';
+    return [error.message, stack].filter(Boolean).join('\n');
+  }
+  return String(error);
+}
+
 export function withCliErrorHandling<TArgs extends unknown[]>(
   command: string,
   handler: (...args: TArgs) => Promise<void> | void,
@@ -109,6 +129,16 @@ export function withCliErrorHandling<TArgs extends unknown[]>(
     try {
       await handler(...args);
     } catch (error) {
+      try {
+        await persistCompactedToolOutput({
+          outputDir: extractOutputDir(args),
+          command,
+          stage: 'error',
+          rawText: errorToText(error),
+        });
+      } catch {
+        // Avoid masking original command failure.
+      }
       if (extractJsonMode(args)) {
         emitCliJsonError(command, error);
         process.exitCode = 1;

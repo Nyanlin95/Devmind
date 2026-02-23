@@ -19,7 +19,7 @@ import { generateModuleDocs } from './generators/modules.js';
 import { generateTree } from './utils/tree.js';
 import * as path from 'path';
 import * as fs from 'fs';
-import { logger } from '../core/index.js';
+import { logger, getScannerIgnoreNames } from '../core/index.js';
 
 // High-level API for the CLI to use
 export interface ScanResult {
@@ -33,7 +33,8 @@ export interface ScanResult {
 export async function scanCodebase(rootPath: string, outputDir: string): Promise<ScanResult> {
   logger.info(`Scanning codebase at: ${rootPath}`);
 
-  const structure = await scanDirectoryAsync(rootPath);
+  const ignoreNames = await getScannerIgnoreNames(rootPath);
+  const structure = await scanDirectoryAsync(rootPath, 0, 4, 24, ignoreNames);
 
   logger.info('Generating documentation...');
 

@@ -87,11 +87,12 @@ For OpenClaw skill install, use:
 - `devmind status --json`
   : Preflight context health and read `recommendedCommand` when stale.
 - `devmind generate --all`
-  : Refresh database + codebase context in one step.
+  : Refresh unified context; skips DB generation when no DB config is detected.
 - `devmind scan`
   : Refresh codebase context only.
 - `devmind retrieve -q "<query>"`
-  : Two-stage retrieval (index metadata filter + AGENTS section chunks) for token-efficient context pulls.
+  : Deterministic retrieval using contract docs, routed summaries, escalation levels, and optional state logs.
+  : Supports `--route auth|db|ui`, `--level 1|2|3`, and `--state`.
 - `devmind context --query "<text>"`
   : Search generated `.devmind` artifacts for focused context snippets.
 - `devmind analyze`
